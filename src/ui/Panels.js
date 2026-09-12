@@ -6,6 +6,7 @@ const fmt = (n) => n.toLocaleString();
 
 export function initPanels(h) {
   const kpis = $('kpis'), alertList = $('alert-list'), alertCount = $('alert-count'), focusPanel = $('focus-panel'), legend = $('legend'), crumb = $('crumb');
+  const flowList = $('flow-list'), flowCount = $('flow-count');
   const btnBack = $('btn-back');
 
   btnBack.onclick = () => h.onBack();
@@ -62,6 +63,31 @@ export function initPanels(h) {
         el.querySelector('.a-time').textContent = `持续 ${durTxt}`;
         if (alertList.children[i] !== el) alertList.insertBefore(el, alertList.children[i] || null);
       });
+    },
+
+    // 当前正在流转的连接（按频次排序，最多 10 条），按 id 增量更新避免闪动
+    setFlows(flows, total, pinnedId) {
+      flowCount.textContent = total;
+      if (!flows.length) { if (!flowList.querySelector('.flow-empty')) flowList.innerHTML = '<div class="flow-empty">当前没有数据流转</div>'; return; }
+      flowList.querySelector('.flow-empty')?.remove();
+      const keep = new Set(flows.map((f) => f.id));
+      for (const el of [...flowList.querySelectorAll('.flow')]) if (!keep.has(el.dataset.id)) el.remove();
+      flows.forEach((f, i) => {
+        let el = flowList.querySelector(`.flow[data-id="${f.id}"]`);
+        if (!el) {
+          el = document.createElement('div'); el.className = 'flow'; el.dataset.id = f.id;
+          el.innerHTML = `<span class="fn from"></span><span class="fa"></span><span class="fn to"></span><span class="fr"></span><span class="st"></span>`;
+          el.onmouseenter = () => h.onFlowHover(f.id); el.onmouseleave = () => h.onFlowHover(null); el.onclick = () => h.onFlowClick(f.id);
+        }
+        const [fromEl, arrowEl, toEl, rateEl, stEl] = el.children;
+        fromEl.textContent = f.from; toEl.textContent = f.to; arrowEl.textContent = f.dir; rateEl.textContent = `${f.rate}/min`; stEl.className = `st ${f.status}`;
+        el.title = `${f.from} ${f.dir} ${f.to} · ${f.type}`;
+        el.classList.toggle('pinned', f.id === pinnedId);
+        if (flowList.children[i] !== el) flowList.insertBefore(el, flowList.children[i] || null);
+      });
+      let more = flowList.querySelector('.flow-more');
+      if (total > flows.length) { if (!more) { more = document.createElement('div'); more.className = 'flow-more'; } more.textContent = `还有 ${total - flows.length} 条正在流转`; flowList.appendChild(more); }
+      else more?.remove();
     },
 
     showFocus(b, rels) {

@@ -30,10 +30,11 @@
             <div class="lg-row"><span class="lg-dot general"></span>一般业务<span class="lg-note">下层</span></div>
             <div class="lg-row"><span class="lg-dot warning"></span>告警<span class="lg-note">性能劣化</span></div>
             <div class="lg-row"><span class="lg-dot critical"></span>故障<span class="lg-note">中断 / 严重</span></div>
-            <div class="lg-row"><span class="lg-line"></span>业务连接<span class="lg-note">流光 = 有数据往来</span></div>
+            <div class="lg-row"><span class="lg-line"></span>正在流转<span class="lg-note">亮线 + 箭头指向</span></div>
+            <div class="lg-row"><span class="lg-line idle"></span>有连接无数据<span class="lg-note">暗线</span></div>
             <div class="lg-row"><span class="lg-dust"></span>接入终端<span class="lg-note">密度 = 在线数量</span></div>
           </div>
-          <div class="hint">拖拽旋转 · 滚轮缩放 · 点击业务查看局部关系</div>
+          <div class="hint">悬停业务 = 只看它的连接 · 点击业务 = 局部关系</div>
         </section>
         <section class="panel hidden" id="focus-panel"></section>
       </aside>
@@ -43,6 +44,10 @@
         <section class="panel" id="alerts">
           <div class="panel-title">异常关注 <span class="badge" id="alert-count">0</span></div>
           <div id="alert-list" class="alert-list"></div>
+        </section>
+        <section class="panel" id="flows">
+          <div class="panel-title">实时数据流转 <span class="badge" id="flow-count">0</span></div>
+          <div id="flow-list" class="flow-list"></div>
         </section>
       </aside>
 

@@ -65,8 +65,9 @@ export function generateData() {
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
     if (seen.has(key)) return;
     seen.add(key);
+    const backbone = [auth, bus, data].includes(a) || [auth, bus, data].includes(b);
     links.push({ id: `l${links.length}`, from: a.id, to: b.id, type: type || pick(LINK_TYPES), status: 'normal',
-      rate: rate ?? 0.15 + rand() * 0.8, bidirectional: rand() < 0.35 });
+      rate: rate ?? 0.3 + rand() * 0.8, duty: backbone ? 0.45 : 0.18, bidirectional: rand() < 0.35 });
   };
 
   // N 对 1：绝大多数业务都依赖统一身份认证
@@ -95,7 +96,8 @@ export function generateData() {
 // api 由 main.js 提供：touchLink / addTransientLink / setBusinessStatus / setLinkStatus / setTerminals / terminalEvent
 export function startSimulation(data, api) {
   const { businesses, links } = data;
-  const linkState = new Map(links.map((l) => [l.id, { on: true, until: 0 }]));
+  // 每条连接在“有数据 / 无数据”两种状态间切换；同一时刻只有一部分连接在流转，画面才看得清
+  const linkState = new Map(links.map((l) => [l.id, { on: rand() < l.duty * 0.6, until: rand() * 10, dir: 1 }]));
   const transient = [];
   const anomalies = [];
   let t = 0;
@@ -139,12 +141,16 @@ export function startSimulation(data, api) {
     // 1) 常规连接：按各自频率触发数据事件；偶尔整体静默一段时间 → 流光消失
     for (const l of links) {
       const s = linkState.get(l.id);
-      if (t > s.until) { s.on = rand() < 0.82; s.until = t + 6 + rand() * 20; }
-      if (s.on && rand() < l.rate * STEP) api.touchLink(l.id, l.bidirectional && rand() < 0.4 ? -1 : 1);
+      if (t > s.until) {
+        s.on = rand() < l.duty;
+        s.until = t + (s.on ? 5 + rand() * 12 : 14 + rand() * 26);
+        s.dir = l.bidirectional && rand() < 0.4 ? -1 : 1;
+      }
+      if (s.on && rand() < l.rate * STEP) api.touchLink(l.id, s.dir);
     }
     // 2) 临时连接：随机在两个未连接的业务间建立，短暂活跃后自动消失
     if (t > nextTransient) {
-      nextTransient = t + 5 + rand() * 9;
+      nextTransient = t + 8 + rand() * 12;
       const a = pick(businesses), b = pick(businesses);
       if (a !== b) {
         const id = api.addTransientLink(a.id, b.id, pick(LINK_TYPES));

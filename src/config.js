@@ -15,21 +15,22 @@ export const STATUS_NAME = { normal: '正常', warning: '告警', critical: '故
 
 export const LAYOUT = {
   layers: {
-    core: { y: 18, radius: 18, rings: [8, 14], label: '核心业务层', en: 'CORE' },
+    core: { y: 18, radius: 20, rings: [9, 15.5], label: '核心业务层', en: 'CORE' },
     important: { y: 0, radius: 25, rings: [11, 20], label: '重要业务层', en: 'IMPORTANT' },
     general: { y: -18, radius: 35, rings: [13, 22.5, 31], label: '一般业务层', en: 'GENERAL' },
   },
-  nodeRadius: { core: 1.15, important: 0.9, general: 0.72 },
-  camera: { position: [0, 54, 100], target: [0, 0, 0] },
+  nodeRadius: { core: 1.6, important: 1.2, general: 0.95 },
+  camera: { position: [0, 60, 98], target: [0, 0, 0] },
   focus: { offset: [0, 30, 50] },
 };
 
-// 连接行为：多久没有数据就变暗、临时连接多久消失、流光最短间隔
+// 连接行为：有数据 → 整条点亮并定向流动；多久没有数据就熄灭；临时连接多久消失
 export const LINK_RULES = {
-  idleAfter: 8, // 秒：超过此时间无数据 → 变暗
-  transientRemoveAfter: 14, // 秒：临时连接无数据后移除
-  minPulseGap: 1.6, // 秒：同一连接两次流光的最小间隔（持续有数据时约每 1.6~2.5s 一次）
-  pulseSpeed: 0.42, // 每秒行进的曲线比例
+  idleAfter: 6, // 秒：超过此时间无数据 → 熄灭，只剩底线
+  transientRemoveAfter: 12, // 秒：临时连接无数据后移除
+  idleAlpha: 0.035, // 无数据时底线的亮度（0 = 完全隐藏）
+  dashSpacing: 2.6, // 流动虚线段的间距（世界单位）
+  flowSpeed: 1.2, // 每秒移动的段数
 };
 
 export const colorOf = {

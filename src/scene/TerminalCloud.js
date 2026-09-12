@@ -59,7 +59,7 @@ export class TerminalCloud {
   }
 
   // 每个业务的目标粒子数：与在线终端数成对数关系，避免核心业务粒子淹没画面
-  targetFor(b) { return Math.min(140, Math.round(6 + Math.log2(1 + b.terminals.local) * 9)); }
+  targetFor(b) { return Math.min(110, Math.round(4 + Math.log2(1 + b.terminals.local) * 7)); }
 
   spawn(node) {
     if (!this.free.length) return;
@@ -67,11 +67,11 @@ export class TerminalCloud {
     const b = node.data;
     const set = this.slots.get(b.id) || this.slots.set(b.id, new Set()).get(b.id);
     set.add(i); this.slotOwner[i] = b.id;
-    const r = node.radius * (2.2 + Math.random() * 2.6);
+    const r = node.radius * (1.5 + Math.random() * 1.8);
     this.center.set([node.position.x, node.position.y, node.position.z], i * 3);
     this.orbit.set([r, Math.random() * Math.PI * 2, (Math.random() < 0.5 ? -1 : 1) * (0.05 + Math.random() * 0.12)], i * 3);
     const dur = 10 + Math.random() * 40;
-    this.life.set([this.time, dur, (Math.random() - 0.5) * node.radius * 2.2], i * 3);
+    this.life.set([this.time, dur, node.radius * (0.3 + Math.random() * 1.2)], i * 3);
     this.seed[i] = Math.random();
     this.expire[i] = this.time + dur;
     this.dirty = true;

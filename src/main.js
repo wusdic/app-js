@@ -28,8 +28,35 @@ const links = new LinkSystem(scene, nodes);
 const terminals = new TerminalCloud(nodes);
 scene.add(terminals.points);
 
-const state = { focused: null, stage: null, alerts: new Map(), hoveredNode: null };
+const state = { focused: null, stage: null, alerts: new Map(), spot: null, pinned: null };
 const ctx = { nodes, links, tooltip, onNavigate: (id) => focus(id), onRelationsChanged: () => refreshFocusPanel() };
+
+// ---------- 聚光：只看某个业务 / 某条连接的关系，其余压暗 ----------
+function spotlightFor(kind, id) {
+  if (kind === 'node') {
+    const ls = links.linksOf(id);
+    const ns = new Set([id]); for (const l of ls) { ns.add(l.from); ns.add(l.to); }
+    return { links: new Set(ls.map((l) => l.id)), nodes: ns, anchor: id };
+  }
+  const l = links.links.get(id); if (!l) return null;
+  return { links: new Set([id]), nodes: new Set([l.from, l.to]), anchor: null };
+}
+function applySpot(sel) {
+  if (state.focused) return;
+  state.spot = sel;
+  for (const n of nodes.values()) {
+    const inSet = !sel || sel.nodes.has(n.data.id);
+    n.setDim(inSet ? 1 : 0.3);
+    n.setHover(!!sel && inSet);
+  }
+  for (const l of links.links.values()) {
+    const inSet = !sel || sel.links.has(l.id);
+    l.tube.setDim(inSet ? 1 : 0.12);
+    l.tube.setHover(!!sel && inSet);
+  }
+}
+function hoverSpot(sel) { applySpot(sel || (state.pinned ? spotlightFor('link', state.pinned) : null)); }
+function pinLink(id) { state.pinned = state.pinned === id ? null : id; hoverSpot(null); refreshFlows(); }
 
 for (const b of data.businesses) {
   const node = new BusinessNode(b, positions.get(b.id));
@@ -37,29 +64,28 @@ for (const b of data.businesses) {
   scene.add(node.group);
   node.pickEntry = app.addPickable({
     object: node.pick,
-    onHover: (hit, px) => {
-      node.setHover(!!hit);
-      for (const l of links.linksOf(b.id)) l.tube.setHover(!!hit);
-      tooltip.business(hit ? b : null, px, ctx);
-    },
+    onHover: (hit, px) => { hoverSpot(hit ? spotlightFor('node', b.id) : null); tooltip.business(hit ? b : null, px, ctx); },
     onClick: () => focus(b.id),
   });
 }
 function registerLink(rec) {
-  rec.pickEntry = app.addPickable({ object: rec.tube.pickMesh, enabled: !state.focused, onHover: (hit, px) => { rec.tube.setHover(!!hit); tooltip.link(hit ? rec : null, px, ctx); } });
+  rec.pickEntry = app.addPickable({
+    object: rec.tube.pickMesh, enabled: !state.focused,
+    onHover: (hit, px) => { hoverSpot(hit ? spotlightFor('link', rec.id) : null); tooltip.link(hit ? rec : null, px, ctx); },
+    onClick: () => pinLink(rec.id),
+  });
 }
 for (const l of data.links) { const rec = links.add(l); if (rec) registerLink(rec); }
 links.on((e) => {
-  if (e.type === 'add') registerLink(e.link);
-  if (e.type === 'remove') app.removePickable(e.link.tube.pickMesh);
-  if (e.type === 'add' && state.focused && !(e.link.from === state.focused || e.link.to === state.focused)) e.link.tube.setDim(0.06);
-  if (e.type === 'add' && state.focused && (e.link.from === state.focused || e.link.to === state.focused)) e.link.tube.setDim(0);
+  if (e.type === 'add') { registerLink(e.link); if (state.focused) e.link.tube.setDim(e.link.from === state.focused || e.link.to === state.focused ? 0 : 0.06); else if (state.spot) e.link.tube.setDim(0.12); }
+  if (e.type === 'remove') { app.removePickable(e.link.tube.pickMesh); if (state.pinned === e.link.id) { state.pinned = null; hoverSpot(null); } }
+  if (e.type === 'active' || e.type === 'idle') refreshFlows();
 });
 
 // ---------- 面板 ----------
 const panels = initPanels({
   onBack: () => unfocus(),
-  onReset: () => { unfocus(); flyTo(new THREE.Vector3(...LAYOUT.camera.position), new THREE.Vector3(...LAYOUT.camera.target)); },
+  onReset: () => { unfocus(); state.pinned = null; hoverSpot(null); flyTo(new THREE.Vector3(...LAYOUT.camera.position), new THREE.Vector3(...LAYOUT.camera.target)); },
   onToggle: (key, on) => {
     if (key === 'rotate') app.setAutoRotate(on);
     if (key === 'terminals') terminals.setEnabled(on);
@@ -67,6 +93,8 @@ const panels = initPanels({
   },
   onAlertClick: (alertId) => { const a = state.alerts.get(alertId); if (a) focus(a.kind === 'business' ? a.targetId : a.focusId); },
   onNavigate: (id) => focus(id),
+  onFlowHover: (id) => hoverSpot(id ? spotlightFor('link', id) : null),
+  onFlowClick: (id) => pinLink(id),
 });
 panels.setCrumb(['全网总览']);
 
@@ -81,6 +109,7 @@ function focus(id) {
   const node = nodes.get(id);
   if (!node || state.focused === id) return;
   const open = () => {
+    state.pinned = null; applySpot(null);
     state.focused = id;
     app.focusLocked = true; app.controls.autoRotate = false;
     tooltip.hide();
@@ -140,12 +169,12 @@ function relationsOf(id) {
   return links.linksOf(id).map((l) => {
     const otherId = l.from === id ? l.to : l.from;
     return { other: nodes.get(otherId).data, dir: l.bidirectional ? '⇄' : l.from === id ? '→' : '←', status: l.status, rate: links.ratePerMin(l), link: l };
-  }).sort((a, b) => LEVELS.indexOf(a.other.level) - LEVELS.indexOf(b.other.level) || b.rate - a.rate);
+  }).sort((a, b) => (b.link.active - a.link.active) || LEVELS.indexOf(a.other.level) - LEVELS.indexOf(b.other.level) || b.rate - a.rate);
 }
 function refreshFocusPanel() { if (!state.focused) return; const b = nodes.get(state.focused).data; panels.showFocus(b, relationsOf(b.id)); }
 
-app.onBackgroundClick = () => {};
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') unfocus(); });
+app.onBackgroundClick = () => { if (state.pinned) { state.pinned = null; hoverSpot(null); refreshFlows(); } };
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (state.focused) unfocus(); else if (state.pinned) { state.pinned = null; hoverSpot(null); refreshFlows(); } } });
 
 // ---------- 对外 API（真实数据接入点）----------
 function alertName(kind, targetId) {
@@ -182,6 +211,7 @@ const api = {
   },
   setTerminals: () => state.stage?.setTerminals(),
   terminalEvent: (bid, kind) => { if (state.focused === bid) state.stage?.terminalEvent(kind); },
+  spotlight: (kind, id) => { state.pinned = kind === 'link' ? id : null; applySpot(id ? spotlightFor(kind, id) : null); },
 };
 window.NetView = api;
 
@@ -189,6 +219,15 @@ function refreshAlerts() {
   const order = { critical: 0, warning: 1 };
   const list = [...state.alerts.values()].sort((a, b) => order[a.status] - order[b.status] || LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || a.since - b.since);
   panels.setAlerts(list);
+}
+
+function refreshFlows() {
+  const active = links.activeLinks();
+  const rows = active.slice(0, 10).map((l) => ({
+    id: l.id, from: nodes.get(l.dir > 0 ? l.from : l.to)?.data.name, to: nodes.get(l.dir > 0 ? l.to : l.from)?.data.name,
+    dir: l.bidirectional ? '⇄' : '→', type: l.type, rate: links.ratePerMin(l), status: l.status,
+  }));
+  panels.setFlows(rows, active.length, state.pinned);
 }
 
 function refreshKPIs() {
@@ -208,9 +247,9 @@ app.updaters.add((dt, t) => {
   links.update(dt, t); terminals.update(dt, t);
   state.stage?.update(dt, t);
 });
-setInterval(() => { refreshKPIs(); refreshAlerts(); }, 1000);
+setInterval(() => { refreshKPIs(); refreshAlerts(); refreshFlows(); }, 1000);
 setInterval(() => refreshFocusPanel(), 3000);
-refreshKPIs(); refreshAlerts();
+refreshKPIs(); refreshAlerts(); refreshFlows();
 
 startSimulation(data, api);
 app.start();

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { FlowTube, makeArc } from './FlowTube.js';
+import { FlowTube } from './FlowTube.js';
+import { createSystemModel } from './SystemModel.js';
 import { haloTexture, softTexture, sparkTexture } from '../core/textures.js';
 import { THEME, LEVEL_NAME, colorOf } from '../config.js';
 import { tween, Ease } from '../core/Tween.js';
@@ -16,7 +17,6 @@ const compTopGeo = new THREE.SphereGeometry(0.26, 16, 12);
 const gateGeo = new THREE.TorusGeometry(1.5, 0.05, 8, 48, Math.PI);
 const chevronGeo = new THREE.ConeGeometry(0.32, 0.9, 4);
 const sphereGeo = new THREE.SphereGeometry(1, 32, 24);
-const ringGeo = new THREE.TorusGeometry(1, 0.035, 8, 96);
 
 const floorShader = {
   vertexShader: `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -42,6 +42,8 @@ const floorShader = {
     }`,
 };
 
+const rnd = (a, b) => a + Math.random() * (b - a);
+
 export class FocusStage {
   constructor(app, node, ctx) {
     this.app = app; this.node = node; this.b = node.data; this.ctx = ctx;
@@ -55,6 +57,7 @@ export class FocusStage {
     this.portals = new Map(); // linkId → portal
     this.sparks = [];
     this.time = 0;
+    this.remoteIdleAt = -1;
     this.build();
     app.scene.add(this.group);
     tween(this, { reveal: 1 }, { duration: 1.1, ease: Ease.outCubic });
@@ -71,20 +74,16 @@ export class FocusStage {
     floor.rotation.x = -Math.PI / 2; floor.position.y = -0.8; floor.renderOrder = -5;
     g.add(floor);
 
-    // 中心业务体
-    const bc = new THREE.Color(colorOf.business(this.b));
-    this.centerMat = new THREE.MeshBasicMaterial({ color: bc, transparent: true });
-    this.centerMesh = new THREE.Mesh(sphereGeo, this.centerMat); this.centerMesh.scale.setScalar(1.7);
-    this.centerHaloMat = new THREE.SpriteMaterial({ map: haloTexture(), color: bc, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    const halo = new THREE.Sprite(this.centerHaloMat); halo.scale.setScalar(11);
-    this.ringMat = new THREE.MeshBasicMaterial({ color: bc, transparent: true, opacity: 0 });
-    this.ring1 = new THREE.Mesh(ringGeo, this.ringMat); this.ring1.scale.setScalar(3.1); this.ring1.rotation.x = Math.PI / 2 - 0.5;
-    this.ring2 = new THREE.Mesh(ringGeo, this.ringMat); this.ring2.scale.setScalar(4.1); this.ring2.rotation.x = Math.PI / 2 + 0.3; this.ring2.rotation.y = 0.6;
-    const centerPick = new THREE.Mesh(sphereGeo, pickMat); centerPick.scale.setScalar(3.2);
-    g.add(this.centerMesh, halo, this.ring1, this.ring2, centerPick);
+    // 中心业务体：与全局同一套系统模型，放大呈现
+    this.center = createSystemModel(this.b.level, colorOf.business(this.b), 1.1);
+    this.center.group.scale.setScalar(2.2);
+    this.center.group.position.y = -0.7;
+    g.add(this.center.group);
+    const centerPick = new THREE.Mesh(sphereGeo, pickMat); centerPick.scale.setScalar(3.2); centerPick.position.y = 1.2;
+    g.add(centerPick);
     this.addPick(centerPick, { onHover: (hit, px) => this.ctx.tooltip.business(hit ? this.b : null, px, this.ctx) });
     const titleEl = document.createElement('div'); titleEl.className = 'lbl stage-title'; titleEl.textContent = this.b.name;
-    this.titleEl = titleEl; g.add(new CSS2DObject(titleEl));
+    this.titleEl = titleEl; const titleObj = new CSS2DObject(titleEl); titleObj.position.y = 4.2; g.add(titleObj);
 
     // 组件环
     const comps = this.b.components;
@@ -105,19 +104,24 @@ export class FocusStage {
       holder.add(new CSS2DObject(el));
       g.add(holder);
       this.addPick(pick, { onHover: (hit, px) => this.ctx.tooltip.component(hit ? c : null, px, this.b) });
-      // 辐条：中心 → 组件
-      const spoke = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), pos.clone()), { color: col, radius: 0.06, segments: 12, baseAlpha: 0.16, pickRadius: 0.3, speed: 0.9, tail: 0.3 });
+      // 辐条：中心 ↔ 组件，有数据时整条点亮并定向流动
+      const spoke = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), pos.clone()), { color: col, radius: 0.06, segments: 12, baseAlpha: 0.05, pickRadius: 0.3, dashSpacing: 1.3, speed: 1.5, arrowScale: 0.45 });
       g.add(spoke.group); this.tubes.push(spoke);
-      this.comps.push({ data: c, holder, pos, spoke, el, mats: [body.material, edges.material, top.material, topHalo.material] });
+      const flow = { on: Math.random() < 0.6, until: this.time + rnd(2, 8) };
+      spoke.setActive(flow.on, Math.random() < 0.5 ? 1 : -1);
+      this.comps.push({ data: c, holder, pos, spoke, el, flow, mats: [body.material, edges.material, top.material, topHalo.material] });
     });
     // 组件间调用关系
+    this.compLinks = [];
     for (const cl of this.b.componentLinks) {
       const a = compPos.get(cl.from), b2 = compPos.get(cl.to);
       if (!a || !b2) continue;
-      const mid = a.clone().add(b2).multiplyScalar(0.5); mid.y += 1.2; mid.multiplyScalar(1.0);
+      const mid = a.clone().add(b2).multiplyScalar(0.5); mid.y += 1.2;
       const curve = new THREE.QuadraticBezierCurve3(a.clone(), mid, b2.clone());
-      const t = new FlowTube(curve, { color: THEME.stage, radius: 0.045, segments: 24, baseAlpha: 0.12, pickRadius: 0.25, speed: 0.8, tail: 0.3 });
+      const t = new FlowTube(curve, { color: THEME.stage, radius: 0.045, segments: 24, baseAlpha: 0.04, pickRadius: 0.25, dashSpacing: 1.2, speed: 1.5, arrowScale: 0.35 });
       t.isCompLink = true; g.add(t.group); this.tubes.push(t);
+      this.compLinks.push({ tube: t, flow: { on: Math.random() < 0.4, until: this.time + rnd(2, 8) } });
+      t.setActive(this.compLinks.at(-1).flow.on, 1);
     }
 
     this.buildTerminals();
@@ -174,6 +178,8 @@ export class FocusStage {
     this.layoutPortals();
   }
 
+  outwardDir(rec, dir) { return rec.from === this.b.id ? dir : -dir; }
+
   addPortal(rec) {
     if (this.portals.has(rec.id)) return;
     const otherId = rec.from === this.b.id ? rec.to : rec.from;
@@ -182,6 +188,7 @@ export class FocusStage {
     const dir = other.position.clone().sub(this.node.position);
     const want = Math.atan2(dir.z, dir.x);
     const portal = this.makePortal({ kind: 'business', color: colorOf.link(rec), want, rec, other });
+    if (rec.active) portal.tube.setActive(true, this.outwardDir(rec, rec.dir));
     this.portals.set(rec.id, portal);
     this.layoutPortals();
   }
@@ -195,7 +202,6 @@ export class FocusStage {
     const holder = new THREE.Group();
     const col = new THREE.Color(color);
     const gate = new THREE.Mesh(gateGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0 }));
-    gate.position.y = 0;
     const chevron = new THREE.Mesh(chevronGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0 }));
     chevron.rotation.z = -Math.PI / 2; chevron.rotation.y = Math.PI / 4; chevron.position.set(2.4, 0, 0);
     const beam = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTexture(), color: col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -206,7 +212,7 @@ export class FocusStage {
     el.className = `lbl portal ${kind === 'terminals' ? 'terminals' : rec.status}`;
     holder.add(new CSS2DObject(el));
     this.group.add(holder);
-    const tube = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(R_PORTAL, 0, 0)), { color, radius: 0.07, segments: 24, baseAlpha: 0.12, edgeFade: true, pickRadius: 0.4, speed: 0.55, tail: 0.22 });
+    const tube = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(R_PORTAL, 0, 0)), { color, radius: 0.07, segments: 24, baseAlpha: 0.05, edgeFade: true, pickRadius: 0.4, dashSpacing: 1.8, speed: 1.3, arrowScale: 0.6, bidirectional: !!rec?.bidirectional });
     this.group.add(tube.group); this.tubes.push(tube);
     const portal = { kind, rec, other, holder, gate, chevron, beam, el, tube, want, angle: want, mats: [gate.material, chevron.material, beam.material] };
     this.addPick(pick, {
@@ -221,14 +227,14 @@ export class FocusStage {
   refreshPortalLabel(p) {
     if (p.kind === 'terminals') { p.el.innerHTML = `远端终端 · ${this.b.terminals.remote.toLocaleString()} 在线<small>REMOTE TERMINALS</small>`; return; }
     const rate = this.ctx.links.ratePerMin(p.rec);
-    p.el.className = `lbl portal ${p.rec.status}`;
-    p.el.innerHTML = `${p.other.data.name}<small>${LEVEL_NAME[p.other.data.level]} · ${p.rec.type}${p.rec.transient ? ' · 临时' : ''} · ${rate}/min</small>`;
+    p.el.className = `lbl portal ${p.rec.status}${p.rec.active ? ' active' : ''}`;
+    p.el.innerHTML = `${p.other.data.name}<small>${LEVEL_NAME[p.other.data.level]} · ${p.rec.type}${p.rec.transient ? ' · 临时' : ''} · ${p.rec.active ? `流转中 ${rate}/min` : '无数据'}</small>`;
   }
 
   // 出口沿边缘按真实方位排布，角度过近时相互推开；远端终端出口放在最空的位置
   layoutPortals() {
     const list = [...this.portals.values()].filter((p) => p.kind !== 'terminals').sort((a, b) => a.want - b.want);
-    const minGap = 0.24;
+    const minGap = 0.3;
     list.forEach((p) => (p.angle = p.want));
     for (let iter = 0; iter < 40; iter++) {
       let moved = false;
@@ -252,10 +258,12 @@ export class FocusStage {
     const rec = e.link;
     const mine = rec.from === this.b.id || rec.to === this.b.id;
     if (!mine) return;
+    const p = this.portals.get(rec.id);
     if (e.type === 'add') this.addPortal(rec);
     else if (e.type === 'remove') this.removePortal(rec.id);
-    else if (e.type === 'pulse') { const p = this.portals.get(rec.id); if (p) { const outward = rec.from === this.b.id ? e.dir : -e.dir; p.tube.pulse(outward); this.refreshPortalLabel(p); } }
-    else if (e.type === 'status') { const p = this.portals.get(rec.id); if (p) { const c = colorOf.link(rec); p.tube.setColor(c); p.tube.setFlicker(rec.status === 'critical'); for (const m of p.mats) m.color.set(c); this.refreshPortalLabel(p); } }
+    else if (e.type === 'active' && p) { p.tube.setActive(true, this.outwardDir(rec, e.dir)); this.refreshPortalLabel(p); }
+    else if (e.type === 'idle' && p) { p.tube.setActive(false); this.refreshPortalLabel(p); }
+    else if (e.type === 'status' && p) { const c = colorOf.link(rec); p.tube.setColor(c); p.tube.setFlicker(rec.status === 'critical'); for (const m of p.mats) m.color.set(c); this.refreshPortalLabel(p); }
     this.ctx.onRelationsChanged?.();
   }
 
@@ -268,9 +276,9 @@ export class FocusStage {
     p.holder.removeFromParent(); this.layoutPortals();
   }
 
-  // 外部事件：本地终端有数据 → 一颗火花从终端飞向组件；远端终端 → 远端终端出口流光
+  // 外部事件：本地终端有数据 → 一颗火花从终端飞向组件；远端终端 → 远端终端出口点亮 6 秒
   terminalEvent(kind) {
-    if (kind === 'remote') { this.portals.get('__remote_terminals')?.tube.pulse(Math.random() < 0.5 ? 1 : -1); return; }
+    if (kind === 'remote') { this.portals.get('__remote_terminals')?.tube.setActive(true, -1); this.remoteIdleAt = this.time + 6; return; }
     this.spawnSpark();
   }
 
@@ -278,10 +286,11 @@ export class FocusStage {
     const alive = this.terms.filter((t) => this.termAlpha(t) > 0.5);
     if (!alive.length) return;
     const t = alive[Math.floor(Math.random() * alive.length)];
-    const s = new THREE.Sprite(this.sparkMat); s.scale.setScalar(0.9); s.renderOrder = 6;
+    const s = new THREE.Sprite(this.sparkMat); s.scale.setScalar(0.65); s.renderOrder = 6;
     this.group.add(s);
     const inbound = Math.random() < 0.7;
-    this.sparks.push({ s, from: inbound ? t.p : t.comp.pos.clone().add(new THREE.Vector3(0, 0.45, 0)), to: inbound ? t.comp.pos.clone().add(new THREE.Vector3(0, 0.45, 0)) : t.p, t: 0, dur: 0.9 });
+    const cp = t.comp.pos.clone().add(new THREE.Vector3(0, 0.45, 0));
+    this.sparks.push({ s, from: inbound ? t.p : cp, to: inbound ? cp : t.p, t: 0, dur: 1.1 });
   }
 
   termAlpha(t) {
@@ -296,14 +305,10 @@ export class FocusStage {
     this.time = time;
     const r = this.reveal, b = this.b;
     this.floorMat.uniforms.uTime.value = time; this.floorMat.uniforms.uOpacity.value = r;
-    const bc = colorOf.business(b);
-    this.centerMat.color.set(bc); this.centerHaloMat.color.set(bc); this.ringMat.color.set(bc);
-    this.centerMesh.scale.setScalar(1.45 * (0.6 + 0.4 * r)); this.centerMat.opacity = r;
-    this.centerHaloMat.opacity = (0.38 + (b.status === 'critical' ? 0.3 * Math.max(0, Math.sin(time * 5)) : 0)) * r;
-    this.ringMat.opacity = 0.6 * r;
-    this.ring1.rotation.z = time * 0.4; this.ring2.rotation.z = -time * 0.3; this.ring2.rotation.x = Math.PI / 2 + 0.3 + Math.sin(time * 0.5) * 0.15;
+    this.center.setColor(colorOf.business(b));
+    this.center.update(dt, time, r, b.status, 0);
     this.titleEl.style.opacity = r;
-    // 组件依次弹出
+    // 组件依次弹出；辐条 / 组件间连接按各自节奏在“流转 / 空闲”间切换
     this.comps.forEach((c, i) => {
       const k = Math.max(0, Math.min(1, (r * 1.6 - i * 0.07) / 0.7));
       const s = Ease.outBack(k) * 0.999 + 0.001;
@@ -312,7 +317,9 @@ export class FocusStage {
       c.holder.children[0].material.opacity = 0.9 * k; c.holder.children[1].material.opacity = 0.9 * k; c.holder.children[3].material.opacity = 0.6 * k;
       c.el.style.opacity = k;
       c.spoke.setDim(k);
+      if (time > c.flow.until) { c.flow.on = Math.random() < 0.65; c.flow.until = time + (c.flow.on ? rnd(5, 14) : rnd(3, 8)); c.spoke.setActive(c.flow.on, Math.random() < 0.6 ? 1 : -1); }
     });
+    for (const cl of this.compLinks) if (time > cl.flow.until) { cl.flow.on = Math.random() < 0.5; cl.flow.until = time + (cl.flow.on ? rnd(4, 12) : rnd(3, 9)); cl.tube.setActive(cl.flow.on, 1); }
     // 终端上线 / 下线
     const tr = Math.max(0, (r - 0.35) / 0.65);
     this.termMat.uniforms.uDim.value = tr; this.lineMat.uniforms.uDim.value = tr;
@@ -320,27 +327,23 @@ export class FocusStage {
     for (let i = 0; i < this.termN; i++) { const a = this.termAlpha(this.terms[i]); pa.array[i] = a; la.array[i * 2] = a; la.array[i * 2 + 1] = a * 0.35; }
     pa.needsUpdate = true; la.needsUpdate = true;
     // 出口
+    if (this.remoteIdleAt > 0 && time > this.remoteIdleAt) { this.remoteIdleAt = -1; this.portals.get('__remote_terminals')?.tube.setActive(false); }
     for (const p of this.portals.values()) {
       const k = Math.max(0, (r - 0.45) / 0.55);
       const rad = R_PORTAL + (1 - k) * 7;
       p.gate.position.x = rad; p.chevron.position.x = rad + 2.4; p.beam.position.x = rad;
       p.holder.children[3].position.x = rad; p.holder.children[4].position.x = rad;
-      p.mats[0].opacity = 0.9 * k; p.mats[1].opacity = 0.8 * k; p.mats[2].opacity = 0.16 * k;
-      p.el.style.opacity = k;
+      const act = 0.45 + 0.55 * p.tube.active; // 无数据的出口更淡
+      p.mats[0].opacity = 0.9 * k * act; p.mats[1].opacity = 0.8 * k * act; p.mats[2].opacity = 0.16 * k * act;
+      p.el.style.opacity = k * (0.55 + 0.45 * p.tube.active);
       p.tube.setDim(k);
-      p.chevron.position.x += Math.sin(time * 2.2) * 0.25;
+      p.chevron.position.x += Math.sin(time * 2.2) * 0.25 * p.tube.active;
     }
     for (const t of this.tubes) { t.update(dt, time); if (t.isCompLink) t.setDim(tr); }
-    // 组件间与辐条的常态流光：随机触发，密度与业务 QPS 相关
+    // 本地终端偶发火花（频率与业务级别相关，保持克制）
     this.sparkAcc += dt;
-    const period = b.level === 'core' ? 0.28 : b.level === 'important' ? 0.42 : 0.6;
-    if (this.sparkAcc > period && r > 0.8) {
-      this.sparkAcc = 0;
-      const rnd = Math.random();
-      if (rnd < 0.45) this.spawnSpark();
-      else if (rnd < 0.75) { const c = this.comps[Math.floor(Math.random() * this.comps.length)]; c.spoke.pulse(Math.random() < 0.5 ? 1 : -1); }
-      else { const cl = this.tubes.filter((t) => t.isCompLink); if (cl.length) cl[Math.floor(Math.random() * cl.length)].pulse(1); }
-    }
+    const period = b.level === 'core' ? 0.7 : b.level === 'important' ? 1.0 : 1.4;
+    if (this.sparkAcc > period && r > 0.8) { this.sparkAcc = 0; this.spawnSpark(); }
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const sp = this.sparks[i]; sp.t += dt / sp.dur;
       if (sp.t >= 1) { sp.s.removeFromParent(); this.sparks.splice(i, 1); continue; }

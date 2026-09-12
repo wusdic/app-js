@@ -38,7 +38,7 @@ export class App {
     // 后期：轻辉光，阈值较高 → 只有亮的节点与流光发光，背景网格保持克制
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.45, 0.7);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.4, 0.72);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.bloomEnabled = true;

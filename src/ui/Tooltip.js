@@ -47,7 +47,8 @@ export class Tooltip {
       <div class="tt-grid">
         ${row('连接类型', `${rec.type}${rec.transient ? ' · 临时连接' : ''}`)}
         ${row('近 1 分钟', `${ctx.links.ratePerMin(rec)} 次数据往来`)}
-        ${row('最近活动', rec.lastActive < 0 ? '暂无' : idle < 1 ? '刚刚' : `${Math.round(idle)} 秒前`, rec.active ? 'ok' : '')}
+        ${row('当前状态', rec.active ? `正在流转 · 持续 ${Math.round(ctx.links.time - rec.activeSince)} 秒` : '无数据', rec.active ? 'ok' : '')}
+        ${row('最近活动', rec.lastActive < 0 ? '暂无' : idle < 1 ? '刚刚' : `${Math.round(idle)} 秒前`)}
         ${row('累计', `${rec.count.toLocaleString()} 次`)}
       </div>
       ${rec.statusMessage ? `<div class="tt-foot" style="color:var(--${rec.status})">⚠ ${rec.statusMessage}</div>` : ''}`, px);
