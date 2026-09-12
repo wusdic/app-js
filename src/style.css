@@ -19,7 +19,8 @@ html { font-size: clamp(13px, 0.72vw, 26px); }
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; font-size: 0.92rem; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; }
+body { font-size: 0.92rem; }
 button { font-family: inherit; font-size: inherit; }
 ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: rgba(120, 180, 255, .2); border-radius: 3px; }
 

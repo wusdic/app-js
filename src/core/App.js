@@ -201,7 +201,7 @@ export class App {
           this.canvas.style.cursor = entry?.onClick ? 'pointer' : 'default';
         }
         for (const u of this.updaters) u(dt, this.time);
-        if (this.autoRotateWanted && !this.controls.autoRotate && !this.focusLocked) { this.idleTimer += dt; if (this.idleTimer > 20) this.controls.autoRotate = true; }
+        if (!this.focusLocked) { this.idleTimer += dt; if (this.autoRotateWanted && !this.controls.autoRotate && this.idleTimer > 20) this.controls.autoRotate = true; }
         this.controls.update();
         this.composer.render();
         this.labelRenderer.render(this.scene, this.camera);

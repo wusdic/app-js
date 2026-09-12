@@ -140,8 +140,8 @@ export function initPanels(h) {
         create: (a) => {
           const el = document.createElement('div');
           el.innerHTML = `<div class="a-head"><span class="a-name"></span><span class="a-new hidden">新</span><span class="tag lv"></span><span class="tag st"></span></div><div class="a-msg"></div><div class="a-impact"></div><div class="a-time"></div>`;
-          el.onclick = () => { if (!a.recoveredAt) h.onAlertClick(a.id); };
-          el.onmouseenter = () => h.onAlertHover(a.id); el.onmouseleave = () => h.onAlertHover(null);
+          el.onclick = () => { if (!el.classList.contains('recovered')) h.onAlertClick(el.dataset.id); };
+          el.onmouseenter = () => { if (!el.classList.contains('recovered')) h.onAlertHover(el.dataset.id); }; el.onmouseleave = () => h.onAlertHover(null);
           return el;
         },
         update: (el, a) => {

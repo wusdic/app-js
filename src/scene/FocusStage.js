@@ -226,6 +226,7 @@ export class FocusStage {
     const dir = other.position.clone().sub(this.node.position);
     const portal = this.makePortal({ kind: 'business', color: colorOf.link(rec), want: Math.atan2(dir.z, dir.x), rec, other });
     if (rec.active) portal.tube.setActive(true, this.outwardDir(rec, rec.dir));
+    if (rec.status !== 'normal') portal.tube.setColor(colorOf.link(rec), THEME.hdrGain);
     if (rec.status === 'critical') portal.tube.setAlarm(true);
     this.portals.set(rec.id, portal);
     this.layoutPortals();
