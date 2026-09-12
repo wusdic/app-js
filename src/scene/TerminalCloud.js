@@ -11,6 +11,8 @@ export class TerminalCloud {
     this.orbit = new Float32Array(CAPACITY * 3); // radius, angle0, speed
     this.life = new Float32Array(CAPACITY * 3); // birth, duration, yOffset
     this.seed = new Float32Array(CAPACITY);
+    this.vis = new Float32Array(CAPACITY);
+    this.layer = 'all';
     this.free = []; for (let i = CAPACITY - 1; i >= 0; i--) this.free.push(i);
     this.slots = new Map(); // business id → Set(slot)
     this.expire = new Array(CAPACITY).fill(0);
@@ -22,11 +24,12 @@ export class TerminalCloud {
     g.setAttribute('aOrbit', new THREE.BufferAttribute(this.orbit, 3));
     g.setAttribute('aLife', new THREE.BufferAttribute(this.life, 3));
     g.setAttribute('aSeed', new THREE.BufferAttribute(this.seed, 1));
+    g.setAttribute('aVis', new THREE.BufferAttribute(this.vis, 1));
     this.geometry = g;
     this.material = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 }, uDim: { value: 1 }, uColor: { value: new THREE.Color(THEME.terminal) }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
       vertexShader: `
-        attribute vec3 aCenter; attribute vec3 aOrbit; attribute vec3 aLife; attribute float aSeed;
+        attribute vec3 aCenter; attribute vec3 aOrbit; attribute vec3 aLife; attribute float aSeed; attribute float aVis;
         uniform float uTime; uniform float uPixelRatio; varying float vA;
         void main(){
           float age = uTime - aLife.x;
@@ -36,7 +39,7 @@ export class TerminalCloud {
           vec3 p = aCenter + vec3(cos(ang) * aOrbit.x, aLife.z + sin(uTime * 0.7 + aSeed * 10.0) * 0.25, sin(ang) * aOrbit.x);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          vA = alive * env * (0.35 + 0.45 * aSeed);
+          vA = alive * env * (0.35 + 0.45 * aSeed) * aVis;
           gl_PointSize = (1.6 + aSeed * 1.6) * uPixelRatio * (60.0 / -mv.z) * alive;
         }`,
       fragmentShader: `
@@ -73,6 +76,7 @@ export class TerminalCloud {
     const dur = 10 + Math.random() * 40;
     this.life.set([this.time, dur, node.radius * (0.3 + Math.random() * 1.2)], i * 3);
     this.seed[i] = Math.random();
+    this.vis[i] = this.layer === 'all' || b.level === this.layer ? 1 : 0;
     this.expire[i] = this.time + dur;
     this.dirty = true;
   }
@@ -87,6 +91,12 @@ export class TerminalCloud {
   }
 
   setDim(d) { this.material.uniforms.uDim.value = d * (this.enabled ? 1 : 0); }
+  // 分层查看：只显示当前层业务的终端
+  setLayer(level) {
+    this.layer = level;
+    for (let i = 0; i < CAPACITY; i++) { const owner = this.slotOwner[i]; if (owner) this.vis[i] = level === 'all' || owner.startsWith(level) ? 1 : 0; }
+    this.geometry.attributes.aVis.needsUpdate = true;
+  }
   setEnabled(on) { this.enabled = on; this.points.visible = on; }
 
   update(dt, time) {
@@ -105,7 +115,7 @@ export class TerminalCloud {
     }
     if (this.dirty) {
       this.dirty = false;
-      for (const name of ['aCenter', 'aOrbit', 'aLife', 'aSeed']) this.geometry.attributes[name].needsUpdate = true;
+      for (const name of ['aCenter', 'aOrbit', 'aLife', 'aSeed', 'aVis']) this.geometry.attributes[name].needsUpdate = true;
     }
   }
 }

@@ -60,6 +60,8 @@ export function createLayers() {
   }
   group.update = (dt, t) => { for (const l of Object.values(layers)) l.mat.uniforms.uTime.value = t; };
   group.setDim = (d) => { for (const l of Object.values(layers)) { l.mat.uniforms.uDim.value = d; l.el.classList.toggle('dim', d < 0.5); } };
+  // 分层查看：当前层圆盘完整显示，其它层虚化
+  group.setLayerDims = (level) => { for (const [lv, l] of Object.entries(layers)) { const on = level === 'all' || lv === level; l.mat.uniforms.uDim.value = on ? 1 : 0.16; l.el.classList.toggle('dim', !on); } };
   group.layerMap = layers;
   return group;
 }

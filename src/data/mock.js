@@ -21,14 +21,31 @@ export function rand() { seed = (seed * 1664525 + 1013904223) % 4294967296; retu
 const ri = (a, b) => a + Math.floor(rand() * (b - a + 1));
 const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 
+const COMP_EVENTS = ['例行巡检通过', '配置热更新完成', '实例滚动重启完成', '健康检查通过', '容量水位正常'];
+function clock(minAgo) { const d = new Date(Date.now() - minAgo * 60000); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+
 function makeComponents(level, bid) {
   const list = COMP_TEMPLATES[level].filter((_, i) => level !== 'core' || i < 5 + ri(0, 2));
   return list.map(([name, type], i) => ({
-    id: `${bid}-c${i}`, name, type, status: 'normal',
+    id: `${bid}-c${i}`, name, type, status: 'normal', message: '',
     instances: type === 'app' ? ri(4, 24) : type === 'db' ? ri(2, 6) : ri(2, 12),
     cpu: ri(12, 68), mem: ri(30, 75),
+    metrics: { qps: type === 'db' ? ri(200, 3000) : ri(100, 5000), latency: type === 'cache' ? ri(1, 5) : type === 'db' ? ri(4, 40) : ri(8, 90), errorRate: (rand() * 0.2).toFixed(2) },
+    version: `v${ri(2, 6)}.${ri(0, 12)}.${ri(0, 20)}`,
+    events: [{ time: clock(ri(20, 180)), text: pick(COMP_EVENTS) }, { time: clock(ri(200, 900)), text: pick(COMP_EVENTS) }],
   }));
 }
+
+// 组件级异常模板（按组件类型），业务异常由组件根因引起
+const COMP_ANOMALY = {
+  gateway: [['warning', '连接数接近上限，拒绝率 1.8%'], ['critical', '网关实例全部不可用']],
+  app: [['warning', 'CPU 使用率持续 > 90%'], ['warning', '响应时延升高，P95 > 800ms'], ['critical', '实例健康检查失败']],
+  db: [['critical', '数据库主节点失联'], ['warning', '慢查询激增，P95 > 2s']],
+  cache: [['warning', '缓存命中率下降至 61%']],
+  mq: [['warning', '消息积压超过 50 万条']],
+  storage: [['warning', '磁盘使用率 92%']],
+  sched: [['warning', '任务调度延迟 > 5 分钟']],
+};
 
 function makeBusiness(name, level, i) {
   const id = `${level}-${i}`;
@@ -103,34 +120,36 @@ export function startSimulation(data, api) {
   let t = 0;
   let nextTransient = 4, nextAnomaly = 6;
 
-  const ANOMALY_TEMPLATES = {
-    business: [
-      ['warning', '响应时延升高，P95 > 800ms'], ['warning', '可用性下降至 99.5%'], ['critical', '服务不可用，健康检查失败'],
-      ['warning', 'CPU 使用率持续 > 90%'], ['critical', '数据库主节点失联'],
-    ],
-    link: [['warning', '链路丢包率 3.2%'], ['critical', '链路中断，重试失败'], ['warning', '调用超时率上升']],
-  };
+  const LINK_ANOMALY = [['warning', '链路丢包率 3.2%'], ['critical', '链路中断，重试失败'], ['warning', '调用超时率上升']];
+
+  // 业务异常一律由某个组件作为根因触发，恢复时同时恢复组件
+  function raiseComponentAnomaly(b, forced) {
+    const comp = pick(b.components);
+    if (comp.status !== 'normal') return false;
+    const [status, msg] = forced || pick(COMP_ANOMALY[comp.type] || COMP_ANOMALY.app);
+    api.setComponentStatus(b.id, comp.id, status, msg);
+    anomalies.push({ kind: 'component', id: b.id, cid: comp.id, until: t + 35 + rand() * 70 });
+    return true;
+  }
 
   function raiseAnomaly() {
-    const isLink = rand() < 0.35;
-    if (isLink) {
+    if (rand() < 0.35) {
       const l = pick(links);
       if (l.status !== 'normal') return;
-      const [status, msg] = pick(ANOMALY_TEMPLATES.link);
+      const [status, msg] = pick(LINK_ANOMALY);
       api.setLinkStatus(l.id, status, msg);
       anomalies.push({ kind: 'link', id: l.id, until: t + 30 + rand() * 60 });
     } else {
       const b = pick(businesses);
       if (b.status !== 'normal') return;
-      const [status, msg] = pick(ANOMALY_TEMPLATES.business);
-      api.setBusinessStatus(b.id, status, msg);
-      anomalies.push({ kind: 'business', id: b.id, until: t + 35 + rand() * 70 });
+      raiseComponentAnomaly(b);
     }
   }
 
-  // 初始：一个核心业务告警 + 一条重要链路故障，便于演示
-  api.setBusinessStatus(businesses[4].id, 'warning', '响应时延升高，P95 > 800ms');
-  anomalies.push({ kind: 'business', id: businesses[4].id, until: 60 + rand() * 40 });
+  // 初始：一个核心业务的应用集群告警 + 一条重要链路故障，便于演示
+  { const b = businesses[4]; const comp = b.components.find((c) => c.type === 'app') || b.components[0];
+    api.setComponentStatus(b.id, comp.id, 'warning', '响应时延升高，P95 > 800ms');
+    anomalies.push({ kind: 'component', id: b.id, cid: comp.id, until: 60 + rand() * 40 }); }
   const l0 = links.find((l) => l.from === 'important-3' || l.to === 'important-3') || links[5];
   api.setLinkStatus(l0.id, 'critical', '链路中断，重试失败');
   anomalies.push({ kind: 'link', id: l0.id, until: 75 + rand() * 40 });
@@ -178,7 +197,7 @@ export function startSimulation(data, api) {
       const a = anomalies[i];
       if (t > a.until) {
         anomalies.splice(i, 1);
-        if (a.kind === 'link') api.setLinkStatus(a.id, 'normal'); else api.setBusinessStatus(a.id, 'normal');
+        if (a.kind === 'link') api.setLinkStatus(a.id, 'normal'); else api.setComponentStatus(a.id, a.cid, 'normal');
       }
     }
   }, STEP * 1000);

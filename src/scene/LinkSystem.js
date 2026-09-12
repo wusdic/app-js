@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FlowTube, makeArc } from './FlowTube.js';
 import { LINK_RULES, colorOf } from '../config.js';
 
-// 业务间连接管理：有数据往来 → 活跃（整条点亮 + 定向流动）；一段时间无数据 → 熄灭；临时连接熄灭后自动移除
+// 业务间连接管理：底线亮度由 main.js 的可见性规则设置；有数据 → 标记活跃并（按最小间隔）放出一道辉光；一段时间无数据 → 熄灭
 export class LinkSystem {
   constructor(scene, nodes) {
     this.scene = scene;
@@ -25,11 +25,8 @@ export class LinkSystem {
     const A = this.nodes.get(link.from), B = this.nodes.get(link.to);
     if (!A || !B) return null;
     const curve = makeArc(A.position, B.position);
-    const tube = new FlowTube(curve, {
-      color: colorOf.link(link), baseAlpha: link.transient ? 0 : LINK_RULES.idleAlpha, bidirectional: !!link.bidirectional,
-      dashSpacing: LINK_RULES.dashSpacing, speed: LINK_RULES.flowSpeed,
-    });
-    const rec = { ...link, tube, lastActive: -100, activeSince: -100, active: false, dir: 1, count: 0, recent: [], removing: false, transient: !!link.transient };
+    const tube = new FlowTube(curve, { color: colorOf.link(link), baseAlpha: 0, bidirectional: !!link.bidirectional, speed: LINK_RULES.pulseSpeed, tail: LINK_RULES.tail });
+    const rec = { ...link, tube, lastActive: -100, activeSince: -100, lastPulse: -100, active: false, dir: 1, count: 0, recent: [], removing: false, transient: !!link.transient, glowEnabled: true };
     this.group.add(tube.group);
     this.links.set(link.id, rec);
     tube.mesh.userData.link = rec; tube.pickMesh.userData.link = rec;
@@ -52,7 +49,7 @@ export class LinkSystem {
     return rec ? id : null;
   }
 
-  // 数据事件：刷新活跃时间；首次到达时点亮连接（方向取本轮首个事件的方向）
+  // 数据事件：标记活跃；距上一道辉光超过最小间隔时再放出一道
   touch(id, dir = 1) {
     const rec = this.links.get(id);
     if (!rec || rec.removing) return;
@@ -64,6 +61,12 @@ export class LinkSystem {
       rec.tube.setActive(true, dir);
       this.emit({ type: 'active', link: rec, dir });
     }
+    const gap = rec.status === 'critical' ? LINK_RULES.pulseGap * 0.6 : LINK_RULES.pulseGap;
+    if (rec.glowEnabled && this.time - rec.lastPulse >= gap) {
+      rec.lastPulse = this.time;
+      rec.tube.pulse(dir, rec.status === 'critical' ? 1.4 : 1);
+      this.emit({ type: 'pulse', link: rec, dir });
+    }
   }
 
   setStatus(id, status) {
@@ -72,13 +75,8 @@ export class LinkSystem {
     rec.status = status;
     rec.tube.setColor(colorOf.link(rec));
     rec.tube.setFlicker(status === 'critical');
-    // 异常连接即便没有数据也要看得见
-    rec.tube.setBase(status !== 'normal' ? 0.28 : rec.transient ? 0 : LINK_RULES.idleAlpha);
     this.emit({ type: 'status', link: rec });
   }
-
-  setDim(d) { for (const rec of this.links.values()) rec.tube.setDim(d); }
-  setDimExcept(d, keepFn) { for (const rec of this.links.values()) rec.tube.setDim(keepFn(rec) ? 1 : d); }
 
   linksOf(businessId) { return [...this.links.values()].filter((l) => l.from === businessId || l.to === businessId); }
   ratePerMin(rec) { const cutoff = this.time - 60; while (rec.recent.length && rec.recent[0] < cutoff) rec.recent.shift(); return rec.recent.length; }
@@ -96,7 +94,8 @@ export class LinkSystem {
       }
       if (rec.transient && !rec.removing && idle > LINK_RULES.transientRemoveAfter) {
         rec.removing = true;
-        setTimeout(() => this.remove(rec.id), 600);
+        rec.tube.setBase(0);
+        setTimeout(() => this.remove(rec.id), 700);
       }
     }
   }

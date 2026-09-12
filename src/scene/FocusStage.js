@@ -15,6 +15,7 @@ const compGeo = new THREE.CylinderGeometry(0.85, 0.85, 0.22, 6);
 const compEdges = new THREE.EdgesGeometry(compGeo);
 const compTopGeo = new THREE.SphereGeometry(0.26, 16, 12);
 const gateGeo = new THREE.TorusGeometry(1.5, 0.05, 8, 48, Math.PI);
+const selRingGeo = new THREE.RingGeometry(1.25, 1.42, 48);
 const chevronGeo = new THREE.ConeGeometry(0.32, 0.9, 4);
 const sphereGeo = new THREE.SphereGeometry(1, 32, 24);
 
@@ -98,18 +99,20 @@ export class FocusStage {
       const edges = new THREE.LineSegments(compEdges, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9 }));
       const top = new THREE.Mesh(compTopGeo, new THREE.MeshBasicMaterial({ color: col })); top.position.y = 0.45;
       const topHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), color: col, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })); topHalo.position.y = 0.45; topHalo.scale.setScalar(2.4);
-      const pick = new THREE.Mesh(sphereGeo, pickMat); pick.scale.setScalar(1.4);
-      holder.add(body, edges, top, topHalo, pick);
+      const pick = new THREE.Mesh(sphereGeo, pickMat); pick.scale.setScalar(1.7); pick.position.y = 0.3;
+      const ring = new THREE.Mesh(selRingGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = -0.1;
+      holder.add(body, edges, top, topHalo, pick, ring);
       const el = document.createElement('div'); el.className = `lbl comp ${c.status}`; el.textContent = c.name;
       holder.add(new CSS2DObject(el));
       g.add(holder);
-      this.addPick(pick, { onHover: (hit, px) => this.ctx.tooltip.component(hit ? c : null, px, this.b) });
-      // 辐条：中心 ↔ 组件，有数据时整条点亮并定向流动
-      const spoke = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), pos.clone()), { color: col, radius: 0.06, segments: 12, baseAlpha: 0.05, pickRadius: 0.3, dashSpacing: 1.3, speed: 1.5, arrowScale: 0.45 });
+      this.addPick(pick, { onHover: (hit, px) => this.ctx.tooltip.component(hit ? c : null, px, this.b), onClick: () => this.ctx.onSelectComponent(c.id) });
+      // 辐条：中心 ↔ 组件，常亮；有数据时辉光飞过
+      const spoke = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), pos.clone()), { color: col, radius: 0.06, segments: 12, baseAlpha: 0.16, pickRadius: 0.3, speed: 0.9, tail: 0.3, arrowScale: 0.45 });
       g.add(spoke.group); this.tubes.push(spoke);
-      const flow = { on: Math.random() < 0.6, until: this.time + rnd(2, 8) };
-      spoke.setActive(flow.on, Math.random() < 0.5 ? 1 : -1);
-      this.comps.push({ data: c, holder, pos, spoke, el, flow, mats: [body.material, edges.material, top.material, topHalo.material] });
+      const flow = { on: Math.random() < 0.6, until: this.time + rnd(2, 8), dir: Math.random() < 0.6 ? 1 : -1, next: 0 };
+      spoke.setActive(flow.on, flow.dir);
+      this.comps.push({ data: c, holder, pos, spoke, el, ring, flow, mats: [body.material, edges.material, top.material, topHalo.material, ring.material] });
     });
     // 组件间调用关系
     this.compLinks = [];
@@ -118,9 +121,9 @@ export class FocusStage {
       if (!a || !b2) continue;
       const mid = a.clone().add(b2).multiplyScalar(0.5); mid.y += 1.2;
       const curve = new THREE.QuadraticBezierCurve3(a.clone(), mid, b2.clone());
-      const t = new FlowTube(curve, { color: THEME.stage, radius: 0.045, segments: 24, baseAlpha: 0.04, pickRadius: 0.25, dashSpacing: 1.2, speed: 1.5, arrowScale: 0.35 });
+      const t = new FlowTube(curve, { color: THEME.stage, radius: 0.045, segments: 24, baseAlpha: 0.12, pickRadius: 0.25, speed: 0.9, tail: 0.3, arrowScale: 0.35 });
       t.isCompLink = true; g.add(t.group); this.tubes.push(t);
-      this.compLinks.push({ tube: t, flow: { on: Math.random() < 0.4, until: this.time + rnd(2, 8) } });
+      this.compLinks.push({ tube: t, from: cl.from, to: cl.to, flow: { on: Math.random() < 0.4, until: this.time + rnd(2, 8), next: 0 } });
       t.setActive(this.compLinks.at(-1).flow.on, 1);
     }
 
@@ -212,7 +215,7 @@ export class FocusStage {
     el.className = `lbl portal ${kind === 'terminals' ? 'terminals' : rec.status}`;
     holder.add(new CSS2DObject(el));
     this.group.add(holder);
-    const tube = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(R_PORTAL, 0, 0)), { color, radius: 0.07, segments: 24, baseAlpha: 0.05, edgeFade: true, pickRadius: 0.4, dashSpacing: 1.8, speed: 1.3, arrowScale: 0.6, bidirectional: !!rec?.bidirectional });
+    const tube = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(R_PORTAL, 0, 0)), { color, radius: 0.07, segments: 24, baseAlpha: 0.14, edgeFade: true, pickRadius: 0.4, speed: 0.6, tail: 0.25, arrowScale: 0.6, bidirectional: !!rec?.bidirectional });
     this.group.add(tube.group); this.tubes.push(tube);
     const portal = { kind, rec, other, holder, gate, chevron, beam, el, tube, want, angle: want, mats: [gate.material, chevron.material, beam.material] };
     this.addPick(pick, {
@@ -262,6 +265,7 @@ export class FocusStage {
     if (e.type === 'add') this.addPortal(rec);
     else if (e.type === 'remove') this.removePortal(rec.id);
     else if (e.type === 'active' && p) { p.tube.setActive(true, this.outwardDir(rec, e.dir)); this.refreshPortalLabel(p); }
+    else if (e.type === 'pulse' && p) { p.tube.pulse(this.outwardDir(rec, e.dir)); this.refreshPortalLabel(p); }
     else if (e.type === 'idle' && p) { p.tube.setActive(false); this.refreshPortalLabel(p); }
     else if (e.type === 'status' && p) { const c = colorOf.link(rec); p.tube.setColor(c); p.tube.setFlicker(rec.status === 'critical'); for (const m of p.mats) m.color.set(c); this.refreshPortalLabel(p); }
     this.ctx.onRelationsChanged?.();
@@ -278,7 +282,7 @@ export class FocusStage {
 
   // 外部事件：本地终端有数据 → 一颗火花从终端飞向组件；远端终端 → 远端终端出口点亮 6 秒
   terminalEvent(kind) {
-    if (kind === 'remote') { this.portals.get('__remote_terminals')?.tube.setActive(true, -1); this.remoteIdleAt = this.time + 6; return; }
+    if (kind === 'remote') { const t = this.portals.get('__remote_terminals')?.tube; if (t) { t.setActive(true, -1); t.pulse(-1); } this.remoteIdleAt = this.time + 6; return; }
     this.spawnSpark();
   }
 
@@ -301,6 +305,31 @@ export class FocusStage {
 
   setTerminals() { this.refreshPortalLabel(this.portals.get('__remote_terminals')); }
 
+  // 选中组件：地面出现选中环，其余组件略微退后
+  selectComponent(cid) { this.selected = cid || null; }
+
+  // 组件状态变化：重新着色（底座、边框、顶点、辐条、标签）
+  refreshComponent(cid) {
+    const c = this.comps.find((x) => x.data.id === cid);
+    if (!c) return;
+    const st = c.data.status;
+    const col = new THREE.Color(st === 'critical' ? THEME.status.critical : st === 'warning' ? THEME.status.warning : THEME.stage);
+    c.mats[0].color.copy(col).multiplyScalar(0.22);
+    for (const m of c.mats.slice(1)) m.color.copy(col);
+    c.spoke.setColor(col.getHex()); c.spoke.setFlicker(st === 'critical');
+    c.el.className = `lbl comp ${st}`;
+  }
+
+  // 组件卡需要的关联信息：上下游组件、接入终端估算
+  componentInfo(cid) {
+    const byId = new Map(this.b.components.map((c) => [c.id, c]));
+    const upstream = this.b.componentLinks.filter((l) => l.to === cid).map((l) => byId.get(l.from)).filter(Boolean);
+    const downstream = this.b.componentLinks.filter((l) => l.from === cid).map((l) => byId.get(l.to)).filter(Boolean);
+    const attached = this.terms.filter((t) => t.comp.data.id === cid).length;
+    const terminals = attached ? Math.round((attached / this.termN) * this.b.terminals.local) : 0;
+    return { upstream, downstream, terminals };
+  }
+
   update(dt, time) {
     this.time = time;
     const r = this.reveal, b = this.b;
@@ -317,9 +346,20 @@ export class FocusStage {
       c.holder.children[0].material.opacity = 0.9 * k; c.holder.children[1].material.opacity = 0.9 * k; c.holder.children[3].material.opacity = 0.6 * k;
       c.el.style.opacity = k;
       c.spoke.setDim(k);
-      if (time > c.flow.until) { c.flow.on = Math.random() < 0.65; c.flow.until = time + (c.flow.on ? rnd(5, 14) : rnd(3, 8)); c.spoke.setActive(c.flow.on, Math.random() < 0.6 ? 1 : -1); }
+      if (time > c.flow.until) { c.flow.on = Math.random() < 0.65; c.flow.until = time + (c.flow.on ? rnd(5, 14) : rnd(3, 8)); c.flow.dir = Math.random() < 0.6 ? 1 : -1; c.spoke.setActive(c.flow.on, c.flow.dir); }
+      if (c.flow.on && time > c.flow.next && r > 0.8) { c.flow.next = time + rnd(1.8, 3.2); c.spoke.pulse(c.flow.dir); }
+      // 选中态：选中环亮起，其它组件略退后
+      const sel = this.selected, isSel = sel === c.data.id;
+      c.mats[4].opacity += ((isSel ? 0.9 : 0) - c.mats[4].opacity) * Math.min(1, dt * 6);
+      c.holder.scale.multiplyScalar(isSel ? 1.12 : 1);
+      c.spoke.setHover(isSel);
+      c.el.style.opacity = k * (sel && !isSel ? 0.55 : 1);
     });
-    for (const cl of this.compLinks) if (time > cl.flow.until) { cl.flow.on = Math.random() < 0.5; cl.flow.until = time + (cl.flow.on ? rnd(4, 12) : rnd(3, 9)); cl.tube.setActive(cl.flow.on, 1); }
+    for (const cl of this.compLinks) {
+      if (time > cl.flow.until) { cl.flow.on = Math.random() < 0.5; cl.flow.until = time + (cl.flow.on ? rnd(4, 12) : rnd(3, 9)); cl.tube.setActive(cl.flow.on, 1); }
+      if (cl.flow.on && time > cl.flow.next && r > 0.8) { cl.flow.next = time + rnd(2, 4); cl.tube.pulse(1); }
+      cl.tube.setHover(this.selected && (cl.from === this.selected || cl.to === this.selected));
+    }
     // 终端上线 / 下线
     const tr = Math.max(0, (r - 0.35) / 0.65);
     this.termMat.uniforms.uDim.value = tr; this.lineMat.uniforms.uDim.value = tr;

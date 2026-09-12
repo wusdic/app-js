@@ -18,8 +18,8 @@ export class BusinessNode {
     this.group.add(this.model.group);
 
     this.pick = new THREE.Mesh(sphereGeo, pickMat);
-    this.pick.scale.setScalar(this.radius * 1.5);
-    this.pick.position.y = this.radius * 0.5;
+    this.pick.scale.setScalar(this.radius * 2.1);
+    this.pick.position.y = this.radius * 0.55;
     this.pick.userData.node = this;
     this.group.add(this.pick);
 
@@ -32,8 +32,11 @@ export class BusinessNode {
     this.group.add(this.alertRing);
 
     this.el = document.createElement('div');
-    this.el.className = `lbl ${business.level}${business.labelAbove ? ' above' : ''}`;
+    this.el.className = `lbl biz ${business.level}${business.labelAbove ? ' above' : ''}`;
     this.el.innerHTML = `<span class="dot"></span><span class="txt">${business.name}</span>`;
+    this.el.onclick = (e) => { e.stopPropagation(); this.onClick?.(); };
+    this.el.onpointerenter = () => this.onHoverLabel?.(true);
+    this.el.onpointerleave = () => this.onHoverLabel?.(false);
     this.label = new CSS2DObject(this.el);
     this.label.position.set(0, business.labelAbove ? this.radius * 1.5 : 0, business.labelAbove ? 0 : this.radius * 1.05);
     this.group.add(this.label);
@@ -58,6 +61,8 @@ export class BusinessNode {
   setHover(on) { tween(this, { hover: on ? 1 : 0 }, { duration: 0.3 }); }
   setDim(d) { tween(this, { dim: d }, { duration: 0.6, ease: Ease.inOutCubic }); this.el.classList.toggle('dim', d < 0.5); }
   setHidden(hidden) { this.group.visible = !hidden; this.el.classList.toggle('hidden-lbl', hidden); }
+  // 虚化：非当前层的业务，标签隐藏
+  setGhost(on) { this.el.classList.toggle('ghost', on); }
 
   update(dt, t) {
     const st = this.data.status;
