@@ -47,7 +47,7 @@ export const heartbeat = (t, period) => { const f = (t % period) / period; retur
 export const HEALTH_WEIGHTS = { core: { critical: 30, warning: 10 }, important: { critical: 10, warning: 4 }, general: { critical: 4, warning: 1 } };
 
 // 画质：渲染分辨率上限（宽度像素）、自适应降级阈值
-export const QUALITY = { maxRenderWidth: 2560, degradeMs: 28, recoverMs: 12 };
+export const QUALITY = { maxRenderWidth: 2560, degradeMs: 22, recoverMs: 9 }; // 阈值针对每帧主线程工作时长（毫秒）
 
 export const colorOf = {
   business: (b) => (b.status === 'critical' ? THEME.status.critical : b.status === 'warning' ? THEME.status.warning : THEME.level[b.level]),

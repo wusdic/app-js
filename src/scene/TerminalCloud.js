@@ -5,7 +5,7 @@ import { THEME } from '../config.js';
 const CAPACITY = 5000;
 
 export class TerminalCloud {
-  constructor(nodes) {
+  constructor(nodes, prUniform = { value: Math.min(window.devicePixelRatio, 2) }) {
     this.nodes = nodes;
     this.center = new Float32Array(CAPACITY * 3);
     this.orbit = new Float32Array(CAPACITY * 3); // radius, angle0, speed
@@ -27,7 +27,7 @@ export class TerminalCloud {
     g.setAttribute('aVis', new THREE.BufferAttribute(this.vis, 1));
     this.geometry = g;
     this.material = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uDim: { value: 1 }, uColor: { value: new THREE.Color(THEME.terminal) }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+      uniforms: { uTime: { value: 0 }, uDim: { value: 1 }, uColor: { value: new THREE.Color(THEME.terminal) }, uPixelRatio: prUniform },
       vertexShader: `
         attribute vec3 aCenter; attribute vec3 aOrbit; attribute vec3 aLife; attribute float aSeed; attribute float aVis;
         uniform float uTime; uniform float uPixelRatio; varying float vA;

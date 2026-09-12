@@ -101,11 +101,11 @@ export class FocusStage {
     const centerPick = new THREE.Mesh(sphereGeo, pickMat); centerPick.scale.setScalar(3.2); centerPick.position.y = 1.2;
     g.add(centerPick);
     this.addPick(centerPick, { tier: 0, onHover: (hit, px) => this.ctx.tooltip.business(hit ? this.b : null, px, this.ctx) });
-    const titleEl = document.createElement('div'); titleEl.className = 'lbl stage-title'; titleEl.textContent = this.b.name;
+    const titleEl = document.createElement('div'); titleEl.className = 'lbl stage-title'; titleEl.innerHTML = '<span class="in"></span>'; titleEl.firstChild.textContent = this.b.name;
     this.titleEl = titleEl; const titleObj = new CSS2DObject(titleEl); titleObj.position.y = 4.2; g.add(titleObj);
 
     // 组件环
-    const comps = this.b.components;
+    const comps = this.b.components || [];
     const compPos = new Map();
     comps.forEach((c, i) => {
       const ang = (i / comps.length) * Math.PI * 2 - Math.PI / 2;
@@ -130,7 +130,7 @@ export class FocusStage {
       const pick = new THREE.Mesh(sphereGeo, pickMat); pick.scale.setScalar(1.7); pick.position.y = 0.4;
       const ring = new THREE.Mesh(selRingGeo, ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = -0.1;
       holder.add(shape, top, halo, pick, ring);
-      const el = document.createElement('div'); el.className = `lbl comp ${c.status}`; el.textContent = c.name;
+      const el = document.createElement('div'); el.className = `lbl comp ${c.status}`; el.innerHTML = '<span class="in"></span>'; el.firstChild.textContent = c.name;
       el.onclick = (e) => { e.stopPropagation(); this.ctx.onSelectComponent(c.id); };
       el.onpointerenter = (e) => this.ctx.tooltip.component(c, { x: e.clientX, y: e.clientY }, this.b);
       el.onpointerleave = () => this.ctx.tooltip.hide();
@@ -147,7 +147,7 @@ export class FocusStage {
     });
     // 组件间调用关系
     this.compLinks = [];
-    for (const cl of this.b.componentLinks) {
+    for (const cl of this.b.componentLinks || []) {
       const a = compPos.get(cl.from), b2 = compPos.get(cl.to);
       if (!a || !b2) continue;
       const d = b2.clone().sub(a).normalize();
@@ -172,7 +172,7 @@ export class FocusStage {
     const n = Math.max(24, Math.min(170, Math.round(b.terminals.local / 7)));
     this.termN = n;
     const attach = this.comps.filter((c) => c.data.type === 'gateway' || c.data.type === 'app');
-    const targets = attach.length ? attach : this.comps;
+    const targets = attach.length ? attach : this.comps.length ? this.comps : [{ pos: new THREE.Vector3(0, 0, 0), data: { id: '__center', name: this.b.name } }]; // 无组件明细时终端直接接到中心
     const pos = new Float32Array(n * 3), alpha = new Float32Array(n), linePos = new Float32Array(n * 6), lineAlpha = new Float32Array(n * 2);
     this.terms = [];
     for (let i = 0; i < n; i++) {
@@ -187,7 +187,7 @@ export class FocusStage {
     pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     pg.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1));
     this.termMat = this.track(new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(THEME.terminal) }, uDim: { value: 0 }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+      uniforms: { uColor: { value: new THREE.Color(THEME.terminal) }, uDim: { value: 0 }, uPixelRatio: this.app.prUniform || { value: Math.min(window.devicePixelRatio, 2) } },
       vertexShader: `attribute float aAlpha; uniform float uPixelRatio; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * mv; vA = aAlpha; gl_PointSize = 3.2 * uPixelRatio * (60.0 / -mv.z); }`,
       fragmentShader: `uniform vec3 uColor; uniform float uDim; varying float vA; void main(){ float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.12, r) * vA * uDim; if (a < 0.003) discard; gl_FragColor = vec4(uColor * a, a); }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -204,7 +204,7 @@ export class FocusStage {
     }));
     this.termLines = new THREE.LineSegments(lg, this.lineMat); this.termLines.frustumCulled = false;
     this.group.add(this.termPoints, this.termLines);
-    this.addPick(this.termPoints, { tier: 2, renderable: true, onHover: (hit, px) => this.ctx.tooltip.terminal(hit ? this.terms[hit.index] : null, px, this.b) });
+    this.addPick(this.termPoints, { tier: 2, renderable: true, onHover: (hit, px) => { const t = hit && this.termAlpha(this.terms[hit.index]) > 0.1 ? this.terms[hit.index] : null; this.ctx.tooltip.terminal(t, px, this.b); } });
     this.sparkMat = this.track(new THREE.SpriteMaterial({ map: sparkTexture(), color: THEME.terminal, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.sparkAcc = 0;
   }
@@ -256,7 +256,7 @@ export class FocusStage {
     this.group.add(holder);
     const tube = new FlowTube(new THREE.LineCurve3(new THREE.Vector3(R_CENTER, 0.2, 0), new THREE.Vector3(R_PORTAL, 0, 0)), { color: col.getHex(), radius: 0.07, segments: 24, baseAlpha: 0.14, edgeFade: true, pickRadius: 0.4, speedUnits: 12, tailUnits: 4, arrowScale: 0.6, arrowInset: 0.6, bidirectional: !!rec?.bidirectional, endFade: 0.3 });
     this.group.add(tube.group); this.tubes.push(tube);
-    const portal = { kind, rec, other, holder, gate, chevron, beam, el, tube, want, angle: want, mats: [gate.material, chevron.material, beam.material], hover: 0, flash: 0 };
+    const portal = { kind, rec, other, holder, gate, chevron, beam, el, tube, pick, want, angle: want, mats: [gate.material, chevron.material, beam.material], hover: 0, flash: 0 };
     const hoverFn = (hit, px) => {
       portal.hover = hit ? 1 : 0;
       if (kind === 'terminals') this.ctx.tooltip.remoteTerminals(hit ? this.b : null, px);
@@ -272,12 +272,16 @@ export class FocusStage {
   }
 
   refreshPortalLabel(p) {
-    if (p.kind === 'terminals') { p.el.innerHTML = `远端终端 · ${this.b.terminals.remote.toLocaleString()} 在线<small>REMOTE TERMINALS</small>`; return; }
+    if (p.kind === 'terminals') { p.el.innerHTML = `<span class="in">远端终端 · ${this.b.terminals.remote.toLocaleString()} 在线<small>REMOTE TERMINALS</small></span>`; return; }
     const rate = this.ctx.links.ratePerMin(p.rec);
     const showSub = p.rec.active || p.hover || this.highlighted === p.rec.id || p.rec.status !== 'normal';
     p.el.className = `lbl portal ${p.rec.status}${p.rec.active ? ' active' : ''}${showSub ? ' sub' : ''}`;
     const sub = `${LEVEL_NAME[p.other.data.level]} · ${p.rec.type}${p.rec.transient ? ' · 临时' : ''} · ${p.rec.active ? `流转中 ${rate}/min` : '无数据'}`;
-    if (p.el.dataset.sub !== sub || !p.el.firstChild) { p.el.dataset.sub = sub; p.el.innerHTML = `${p.other.data.name}<small>${sub}</small>`; }
+    if (p.el.dataset.sub !== sub || !p.el.firstChild) {
+      p.el.dataset.sub = sub;
+      p.el.innerHTML = '<span class="in"><span class="nm"></span><small></small></span>';
+      p.el.querySelector('.nm').textContent = p.other.data.name; p.el.querySelector('small').textContent = sub;
+    }
   }
 
   // 出口沿边缘按真实方位排布，角度过近时相互推开；远端终端出口放在最空的位置
@@ -320,6 +324,7 @@ export class FocusStage {
     const p = this.portals.get(id);
     if (!p) return;
     this.portals.delete(id);
+    for (const o of [p.pick, p.tube.pickMesh]) { this.app.removePickable(o); this.pickables = this.pickables.filter((x) => x !== o); }
     p.tube.dispose(); this.tubes = this.tubes.filter((t) => t !== p.tube);
     p.holder.traverse((o) => { if (o.isCSS2DObject) o.element.remove(); });
     p.holder.removeFromParent(); this.layoutPortals();
@@ -341,7 +346,7 @@ export class FocusStage {
     const alive = this.terms.filter((t) => this.termAlpha(t) > 0.5);
     if (!alive.length) return;
     const t = alive[Math.floor(Math.random() * alive.length)];
-    const s = new THREE.Sprite(this.sparkMat); s.scale.setScalar(0.65); s.renderOrder = 6;
+    const s = new THREE.Sprite(this.sparkMat.clone()); s.scale.setScalar(0.65); s.renderOrder = 6;
     this.group.add(s);
     t.hitAt = this.time;
     const inbound = Math.random() < 0.7;
@@ -376,8 +381,9 @@ export class FocusStage {
   // 组件卡需要的关联信息：上下游组件、接入终端估算
   componentInfo(cid) {
     const byId = new Map(this.b.components.map((c) => [c.id, c]));
-    const upstream = this.b.componentLinks.filter((l) => l.to === cid).map((l) => byId.get(l.from)).filter(Boolean);
-    const downstream = this.b.componentLinks.filter((l) => l.from === cid).map((l) => byId.get(l.to)).filter(Boolean);
+    const cls = this.b.componentLinks || [];
+    const upstream = cls.filter((l) => l.to === cid).map((l) => byId.get(l.from)).filter(Boolean);
+    const downstream = cls.filter((l) => l.from === cid).map((l) => byId.get(l.to)).filter(Boolean);
     const attached = this.terms.filter((t) => t.comp.data.id === cid).length;
     const terminals = attached ? Math.round((attached / this.termN) * this.b.terminals.local) : 0;
     return { upstream, downstream, terminals };
@@ -452,7 +458,7 @@ export class FocusStage {
     if (this.sparkAcc > period && r > 0.8) { this.sparkAcc = 0; this.spawnSpark(); }
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const sp = this.sparks[i]; sp.t += dt / sp.dur;
-      if (sp.t >= 1) { sp.s.removeFromParent(); this.sparks.splice(i, 1); continue; }
+      if (sp.t >= 1) { sp.s.removeFromParent(); sp.s.material.dispose(); this.sparks.splice(i, 1); continue; }
       sp.s.position.lerpVectors(sp.from, sp.to, Ease.inOutCubic(sp.t));
       sp.s.material.opacity = Math.sin(sp.t * Math.PI);
     }
@@ -467,7 +473,7 @@ export class FocusStage {
   dispose() {
     for (const o of this.pickables) this.app.removePickable(o);
     for (const t of this.tubes) t.dispose();
-    for (const sp of this.sparks) sp.s.removeFromParent();
+    for (const sp of this.sparks) { sp.s.removeFromParent(); sp.s.material.dispose(); }
     this.center.dispose();
     for (const d of this.disposables) d.dispose?.();
     this.group.traverse((o) => { if (o.isCSS2DObject) o.element.remove(); });

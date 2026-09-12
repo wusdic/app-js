@@ -16,21 +16,29 @@ import { LAYOUT, LEVEL_NAME, LEVELS, LINK_RULES, HEALTH_WEIGHTS } from './config
 const app = new App(document.getElementById('gl'), document.getElementById('labels'));
 const tooltip = new Tooltip(document.getElementById('tooltip'));
 const scene = app.scene;
-const starfield = createStarfield();
+const starfield = createStarfield(2600, app.prUniform);
 const layers = createLayers();
 scene.add(starfield, layers);
 
 let data = { businesses: [], links: [] };
 const nodes = new Map();
 const links = new LinkSystem(scene, nodes);
-const terminals = new TerminalCloud(nodes);
+const terminals = new TerminalCloud(nodes, app.prUniform);
 scene.add(terminals.points);
 
 const state = {
   layer: LAYOUT.defaultLayer, focused: null, stage: null, selectedComp: null, transition: 'idle',
-  alerts: new Map(), spot: null, pinned: null, hoverTimer: 0, camTweens: [], events: [], scoreHistory: [], termHistory: [], hubs: new Set(),
-  patrol: { enabled: true, current: null, until: 0, phase: 'idle' }, wheelOut: 0, dirty: new Set(), searchSpot: false,
+  alerts: new Map(), spot: null, spotKey: null, pinned: null, hoverSel: null, pendingKey: null, hoverTimer: 0, camTweens: [], events: [], scoreHistory: [], termHistory: [], hubs: new Set(),
+  patrol: { enabled: true, current: null, until: 0, phase: 'idle' }, wheelOut: 0, dirty: new Set(), searchSpot: false, searchSel: null, closing: new Set(), pendingOpen: null, openTimer: 0, queued: null,
 };
+// 数据归一化：外部快照可能缺字段，补默认值避免运行时异常
+function normalizeBusiness(b) {
+  b.status ||= 'normal'; b.components ||= []; b.componentLinks ||= []; b.terminals ||= { local: 0, remote: 0 }; b.terminals.local ??= 0; b.terminals.remote ??= 0;
+  b.metrics ||= { availability: '99.90', latency: 50, qps: 0 }; b.dept ||= '—'; b.owner ||= '—'; b.since ||= '—'; b.name ||= b.id;
+  for (const c of b.components) { c.status ||= 'normal'; c.message ||= ''; c.events ||= []; c.metrics ||= { qps: 0, latency: 0, errorRate: '0.00' }; c.instances ??= 1; c.cpu ??= 0; c.mem ??= 0; c.version ||= '—'; c.type ||= 'app'; c.name ||= c.id; }
+  return b;
+}
+let stopSim = null;
 const now = () => Date.now();
 const nowClock = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; };
 const metricsOf = (b) => b.metricsNow || deriveMetrics(b);
@@ -97,15 +105,33 @@ function spotlightFor(kind, id) {
   const l = links.links.get(id); if (!l) return null;
   return { links: new Set([id]), nodes: new Set([l.from, l.to]), anchor: null, key: `l:${id}` };
 }
-function setSpot(sel) { if (sel?.key && sel.key === state.spot?.key) return; state.spot = sel; applyVisibility(); }
+function setSpot(sel) {
+  const key = sel ? `${sel.key}${state.pinned || state.searchSpot ? ':strong' : ''}` : null;
+  if (key === state.spotKey) return;
+  state.spotKey = key; state.spot = sel; applyVisibility();
+}
 function pinnedSpot() { return state.pinned ? spotlightFor(state.pinned.kind, state.pinned.id) : null; }
-function hoverSpot(sel) { if (state.focused) return; clearTimeout(state.hoverTimer); if (sel) state.hoverTimer = setTimeout(() => setSpot(sel), 150); else setSpot(pinnedSpot()); }
+// 无悬停时的底色聚光：固定 > 搜索 > 无
+function baseSpot() { return state.pinned ? pinnedSpot() : state.searchSpot ? state.searchSel : null; }
+// 悬停意图：同一目标不重置计时器（相机运动时每帧重新拾取也不会打断）
+function hoverSpot(sel) {
+  if (state.focused) return;
+  if (sel) {
+    if (sel.key === state.pendingKey || (state.spot && sel.key === state.spot.key)) { state.hoverSel = sel; return; }
+    clearTimeout(state.hoverTimer); state.pendingKey = sel.key; state.hoverSel = sel;
+    state.hoverTimer = setTimeout(() => { state.pendingKey = null; setSpot(sel); }, 150);
+  } else { clearTimeout(state.hoverTimer); state.pendingKey = null; state.hoverSel = null; setSpot(baseSpot()); }
+}
 function pin(kind, id) {
   state.pinned = state.pinned && state.pinned.kind === kind && state.pinned.id === id ? null : { kind, id };
-  clearTimeout(state.hoverTimer); setSpot(pinnedSpot());
+  clearTimeout(state.hoverTimer); state.pendingKey = null;
+  setSpot(state.pinned ? pinnedSpot() : state.hoverSel || baseSpot());
   updateSpotChip(); schedule('flows');
 }
-function clearPin() { if (!state.pinned) return; state.pinned = null; setSpot(null); updateSpotChip(); schedule('flows'); }
+function clearPin() { if (!state.pinned) return; state.pinned = null; setSpot(state.hoverSel || baseSpot()); updateSpotChip(); schedule('flows'); }
+function clearSearch({ apply = true } = {}) { state.searchSpot = false; state.searchSel = null; panels.clearSearch(); if (apply) setSpot(state.hoverSel || baseSpot()); }
+// 清除一切聚光（Esc / 点击空白）
+function clearSpotAll() { clearTimeout(state.hoverTimer); state.pendingKey = null; state.hoverSel = null; state.pinned = null; clearSearch({ apply: false }); setSpot(null); updateSpotChip(); schedule('flows'); }
 function updateSpotChip() {
   if (!state.pinned) return panels.setSpotChip(null);
   if (state.pinned.kind === 'node') return panels.setSpotChip(nodes.get(state.pinned.id)?.data.name);
@@ -127,7 +153,7 @@ function setLayer(L, { fly = true } = {}) {
   if (state.transition !== 'idle') { state.queued = () => setLayer(L, { fly }); return; }
   if (state.focused) unfocus({ fly: false });
   state.layer = L;
-  state.pinned = null; state.spot = null; updateSpotChip();
+  clearSpotAll();
   applyVisibility();
   refreshLayerTabs(); refreshFlows(); refreshKPIs();
   if (fly) frameLayer(L);
@@ -142,9 +168,11 @@ function registerLink(rec) {
   });
 }
 function addNode(b) {
+  normalizeBusiness(b);
   const node = new BusinessNode(b, positionsFor(b));
   nodes.set(b.id, node);
   scene.add(node.group);
+  if (state.focused) { node.setDim(0.12); }
   node.onClick = (e) => { if (e?.shiftKey) pin('node', b.id); else focus(b.id); };
   node.onHoverLabel = (on, px) => { hoverSpot(on ? spotlightFor('node', b.id) : null); if (on) tooltip.business(b, px, ctx); else tooltip.hide(); };
   node.pickEntry = app.addPickable({
@@ -152,25 +180,36 @@ function addNode(b) {
     onHover: (hit, px) => { hoverSpot(hit ? spotlightFor('node', b.id) : null); tooltip.business(hit ? b : null, px, ctx); },
     onClick: (hit, e) => { if (e?.shiftKey) pin('node', b.id); else focus(b.id); },
   });
+  if (state.focused) node.pickEntry.enabled = false;
   return node;
+}
+// 新增业务：放在所在层最外环、现有节点之间最大的角度空隙处，不移动已有节点（连线几何是烘焙的）
+function placeNew(b) {
+  const cfg = LAYOUT.layers[b.level] || LAYOUT.layers.general;
+  const r = cfg.rings[cfg.rings.length - 1];
+  const angles = [...nodes.values()].filter((n) => n.data.level === b.level).map((n) => Math.atan2(n.position.z, n.position.x)).sort((a, c) => a - c);
+  let best = -Math.PI / 2;
+  if (angles.length) { let bestGap = -1; for (let i = 0; i < angles.length; i++) { const nx = i === angles.length - 1 ? angles[0] + Math.PI * 2 : angles[i + 1]; const gap = nx - angles[i]; if (gap > bestGap) { bestGap = gap; best = angles[i] + gap / 2; } } }
+  positions.set(b.id, new THREE.Vector3(Math.cos(best) * r, cfg.y, Math.sin(best) * r));
 }
 let positions = new Map();
 function positionsFor(b) { return positions.get(b.id) || new THREE.Vector3(0, LAYOUT.layers[b.level].y, 0); }
 function buildScene(snapshot) {
   data = snapshot;
+  data.businesses.forEach(normalizeBusiness);
   positions = layoutPositions(data.businesses);
   for (const b of data.businesses) addNode(b);
   for (const l of data.links) { const rec = links.add(l); if (rec) registerLink(rec); }
   // 快照里已带异常的业务 / 组件 / 连接同样进入告警列表
-  for (const b of data.businesses) { for (const c of b.components) if (c.status !== 'normal') api.setComponentStatus(b.id, c.id, c.status, c.message || '异常'); if (b.status !== 'normal' && !b.rootCause) api.setBusinessStatus(b.id, b.status, b.statusMessage || '异常'); }
-  for (const l of data.links) if (l.status !== 'normal') api.setLinkStatus(l.id, l.status, l.statusMessage || '异常');
+  for (const b of data.businesses) { for (const c of b.components) if (c.status && c.status !== 'normal') api.setComponentStatus(b.id, c.id, c.status, c.message || '异常'); if (b.status && b.status !== 'normal' && !b.rootCause) api.setBusinessStatus(b.id, b.status, b.statusMessage || '异常'); }
+  for (const l of data.links) if (l.status && l.status !== 'normal') api.setLinkStatus(l.id, l.status, l.statusMessage || '异常');
   computeHubs();
   applyVisibility(true);
   refreshLayerTabs(); refreshKPIs(); refreshAlerts(); refreshFlows(); refreshHubs();
 }
 function clearScene() {
-  if (state.focused) unfocus({ fly: false });
-  clearPin(); state.spot = null;
+  if (state.focused || state.pendingOpen) unfocus({ fly: false });
+  clearSpotAll(); state.queued = null;
   links.clear(); terminals.clear();
   for (const n of nodes.values()) { app.removePickable(n.pick); n.dispose(); }
   nodes.clear(); state.alerts.clear(); state.hubs.clear();
@@ -182,14 +221,19 @@ links.on((e) => {
     else applyVisibility(true);
     schedule('hubs');
   }
-  if (e.type === 'remove') { app.removePickable(e.link.tube.pickMesh); if (state.pinned?.kind === 'link' && state.pinned.id === e.link.id) clearPin(); schedule('hubs'); }
+  if (e.type === 'remove') {
+    app.removePickable(e.link.tube.pickMesh);
+    if (state.pinned?.kind === 'link' && state.pinned.id === e.link.id) clearPin();
+    if (state.alerts.has(`l:${e.link.id}`)) { state.alerts.delete(`l:${e.link.id}`); schedule('alerts'); schedule('kpis'); schedule('tabs'); }
+    schedule('hubs');
+  }
   if (e.type === 'active' || e.type === 'idle') { schedule('flows'); schedule('hubs'); }
 });
 
 // ---------- 面板 ----------
 const panels = initPanels({
   onBack: () => unfocus(),
-  onReset: () => { clearPin(); if (state.focused) unfocus({ fly: false }); applyVisibility(); frameLayer(state.layer); },
+  onReset: () => { clearSpotAll(); if (state.focused || state.pendingOpen) unfocus({ fly: false }); applyVisibility(); frameLayer(state.layer); },
   onToggle: (key, on) => {
     if (key === 'rotate') app.setAutoRotate(on);
     if (key === 'terminals') terminals.setEnabled(on);
@@ -198,6 +242,7 @@ const panels = initPanels({
   },
   onQuality: (q) => { if (q === 'auto') { app.autoQuality = true; app.setQuality('high', { auto: true }); panels.setQuality(app.quality, true); } else app.setQuality(q); },
   onAlertClick: (alertId) => { const a = state.alerts.get(alertId); if (!a || a.recoveredAt) return; if (a.kind === 'link') focus(a.focusId, null, a.targetId); else focus(a.targetId, a.cid || null); },
+  onBannerLocate: (evt) => locateAlert(evt),
   onAlertHover: (alertId) => { const a = alertId && state.alerts.get(alertId); if (!a) return hoverSpot(null); hoverSpot(spotlightFor(a.kind === 'link' ? 'link' : 'node', a.targetId)); },
   onNavigate: (id) => focus(id),
   onFlowHover: (id) => hoverSpot(id ? spotlightFor('link', id) : null),
@@ -210,11 +255,10 @@ const panels = initPanels({
   onRelHover: (linkId) => { state.stage?.highlightPortal(linkId || null); panels.setRelHighlight(linkId); },
   onRelClick: (otherId) => focus(otherId),
   onCrumb: (i, n) => { if (i === n - 1) return; if (i === 0) { unfocus(); } else unfocus(); },
-  onSpotClear: () => clearPin(),
-  onBannerLocate: (evt) => locate(evt.targetId),
+  onSpotClear: () => clearSpotAll(),
   onSearch: (q) => search(q),
   onSearchHover: (id) => hoverSpot(id ? spotlightFor('node', id) : null),
-  onSearchPick: (id, shift) => { panels.clearSearch(); state.searchSpot = false; if (shift) pin('node', id); else { setSpot(null); focus(id); } },
+  onSearchPick: (id, shift) => { clearSearch({ apply: false }); if (shift) { state.pinned = null; pin('node', id); } else { setSpot(null); focus(id); } },
 });
 panels.setCrumb(['全网总览']);
 app.onQuality = (q, auto) => panels.setQuality(q, auto);
@@ -222,10 +266,11 @@ panels.setQuality(app.quality, true);
 
 // 搜索：名称 / 部门 / 负责人模糊匹配；匹配集作为临时聚光
 function search(q) {
-  if (!q) { state.searchSpot = false; setSpot(pinnedSpot()); return []; }
-  const matches = data.businesses.filter((b) => [b.name, b.dept, b.owner].some((s) => s.includes(q))).slice(0, 8);
+  if (!q) { state.searchSpot = false; state.searchSel = null; setSpot(state.hoverSel || baseSpot()); return []; }
+  const matches = data.businesses.filter((b) => [b.name, b.dept, b.owner].some((s) => String(s).includes(q))).slice(0, 8);
   state.searchSpot = true;
-  setSpot({ nodes: new Set(matches.map((b) => b.id)), links: new Set(), anchor: null, key: `s:${q}` });
+  state.searchSel = { nodes: new Set(matches.map((b) => b.id)), links: new Set(), anchor: null, key: `s:${q}` };
+  setSpot(state.searchSel);
   return matches.map((b) => ({ id: b.id, name: b.name, level: b.level, dept: b.dept, status: b.status }));
 }
 
@@ -240,24 +285,27 @@ function flyTo(pos, target, duration = 1.4, done) {
 }
 function tweenFov(fov) { tween(app.camera, { fov }, { duration: 1.2, ease: Ease.inOutCubic, onUpdate: () => app.camera.updateProjectionMatrix() }); }
 // 定位（不进入局部）：聚光 + 把视线中心移到该业务
-function locate(id) {
+function locate(id, spot = { kind: 'node', id }) {
   const node = nodes.get(id); if (!node) return;
-  if (state.focused) unfocus({ fly: false });
+  if (state.focused || state.pendingOpen) unfocus({ fly: false });
   if (state.layer !== 'all' && state.layer !== node.data.level) { state.layer = node.data.level; refreshLayerTabs(); applyVisibility(); }
-  pin('node', id);
+  clearTimeout(state.hoverTimer); state.pendingKey = null;
+  state.pinned = spot; setSpot(pinnedSpot()); updateSpotChip(); schedule('flows');
   const off = app.camera.position.clone().sub(app.controls.target);
   flyTo(node.position.clone().add(off), node.position.clone(), 1.4);
 }
+function locateAlert(a) { if (!a) return; if (a.kind === 'link') locate(a.focusId, { kind: 'link', id: a.targetId }); else locate(a.targetId); }
 
 // ---------- 聚焦 / 返回 ----------
 function focus(id, compId = null, linkId = null) {
-  const node = nodes.get(id);
-  if (!node) return;
+  if (!nodes.has(id)) return;
   if (state.transition !== 'idle') { state.queued = () => focus(id, compId, linkId); return; }
-  if (state.focused === id) { if (compId) selectComponent(compId); if (linkId) { state.stage?.highlightPortal(linkId); panels.setRelHighlight(linkId); } return; }
+  if (state.focused === id) { if (compId) selectComponent(compId, { toggle: false }); if (linkId) { state.stage?.highlightPortal(linkId); panels.setRelHighlight(linkId); } return; }
   const open = () => {
+    const node = nodes.get(id);
+    if (!node) { state.transition = 'idle'; runQueued(); return; }
     state.transition = 'opening';
-    clearTimeout(state.hoverTimer); state.pinned = null; state.spot = null; updateSpotChip(); stopPatrol();
+    clearSpotAll(); stopPatrol();
     state.focused = id;
     if (state.layer !== 'all' && state.layer !== node.data.level) { state.layer = node.data.level; refreshLayerTabs(); }
     app.focusLocked = true; app.controls.autoRotate = false;
@@ -268,7 +316,16 @@ function focus(id, compId = null, linkId = null) {
     document.getElementById('labels').classList.add('focus-mode');
     layers.setDim(0.18);
     terminals.setDim(0.05);
-    state.stage = new FocusStage(app, node, ctx);
+    try { state.stage = new FocusStage(app, node, ctx); }
+    catch (err) {
+      // 舞台构建失败：回滚到全网状态，不让页面卡在过渡态
+      console.error('局部视图构建失败', err);
+      state.stage = null; state.focused = null; app.focusLocked = false; node.setHidden(false);
+      document.getElementById('labels').classList.remove('focus-mode');
+      for (const l of links.links.values()) if (l.pickEntry) l.pickEntry.enabled = true;
+      layers.setDim(1); terminals.setDim(1); applyVisibility(); state.transition = 'idle'; runQueued();
+      return;
+    }
     // 相机：保持当前方位角，靠近并抬高视角；先放宽距离限制再飞，落地后收紧
     const dir = app.camera.position.clone().sub(node.position); dir.y = 0;
     if (dir.lengthSq() < 1e-3) dir.set(0, 0, 1); else dir.normalize();
@@ -279,42 +336,50 @@ function focus(id, compId = null, linkId = null) {
     tweenFov(LAYOUT.focus.fov);
     panels.setCrumb(['全网总览', LEVEL_NAME[node.data.level] + '层', node.data.name]);
     refreshFocusPanel();
-    selectComponent(compId || node.data.rootCause || null);
-    setTimeout(() => { state.transition = 'idle'; if (linkId) { state.stage?.highlightPortal(linkId); panels.setRelHighlight(linkId); } runQueued(); }, 700);
+    selectComponent(compId || node.data.rootCause || null, { toggle: false });
+    clearTimeout(state.openTimer);
+    state.openTimer = setTimeout(() => { state.openTimer = 0; if (state.transition === 'opening') state.transition = 'idle'; if (linkId && state.focused === id) { state.stage?.highlightPortal(linkId); panels.setRelHighlight(linkId); } runQueued(); }, 700);
   };
-  if (state.stage) closeStage(open); else open();
+  if (state.stage) { state.pendingOpen = open; closeStage(() => { const o = state.pendingOpen; state.pendingOpen = null; o?.(); }); } else open();
 }
-function runQueued() { const q = state.queued; state.queued = null; q?.(); }
+function runQueued() { if (state.transition !== 'idle') return; const q = state.queued; state.queued = null; q?.(); }
+// 关闭舞台：淡出期间仍由主循环驱动（state.closing），结束后释放
 function closeStage(done) {
   const st = state.stage; state.stage = null;
   const prev = state.focused; state.focused = null;
-  state.transition = 'closing';
+  clearTimeout(state.openTimer); state.openTimer = 0;
   state.selectedComp = null; panels.hideComponent(); document.getElementById('focus-panel').classList.remove('compact');
   nodes.get(prev)?.setHidden(false);
-  st.close(() => { state.transition = 'idle'; done?.(); runQueued(); });
+  if (!st) { state.transition = 'idle'; done?.(); runQueued(); return; }
+  state.transition = 'closing';
+  state.closing.add(st);
+  st.close(() => { state.closing.delete(st); state.transition = 'idle'; done?.(); runQueued(); });
 }
-function unfocus({ fly = true } = {}) {
-  if (!state.focused) return;
-  if (state.transition !== 'idle' && state.transition !== 'opening') return;
-  closeStage();
+function restoreGlobal() {
   document.getElementById('labels').classList.remove('focus-mode');
   for (const l of links.links.values()) if (l.pickEntry) l.pickEntry.enabled = true;
-  layers.setDim(1);
-  terminals.setDim(1);
+  layers.setDim(1); terminals.setDim(1);
   applyVisibility();
   app.focusLocked = false; app.idleTimer = 0;
   app.controls.minDistance = 12; app.controls.maxDistance = 220;
+  panels.hideFocus(); panels.setCrumb(['全网总览']);
+  refreshLayerTabs(); refreshFlows();
+}
+function unfocus({ fly = true } = {}) {
+  state.queued = null;
+  // A→B 切换的关闭窗口内按 Esc：取消待打开的 B，直接回全网
+  if (!state.focused && state.pendingOpen) { state.pendingOpen = null; restoreGlobal(); if (fly) frameLayer(state.layer); tweenFov(42); return; }
+  if (!state.focused) return;
+  closeStage();
+  restoreGlobal();
   if (fly) frameLayer(state.layer);
   tweenFov(42);
-  panels.hideFocus();
-  panels.setCrumb(['全网总览']);
-  refreshLayerTabs(); refreshFlows();
 }
 
 // 组件选中：舞台高亮 + 左侧状态卡；再点同一组件取消
-function selectComponent(cid) {
+function selectComponent(cid, { toggle = true } = {}) {
   if (!state.stage) return;
-  if (cid && cid === state.selectedComp) cid = null;
+  if (toggle && cid && cid === state.selectedComp) cid = null;
   state.selectedComp = cid;
   state.stage.selectComponent(cid);
   document.getElementById('focus-panel').classList.toggle('compact', !!cid);
@@ -345,7 +410,7 @@ function refreshFocusPanel() {
 // ---------- 背景点击 / 键盘 / 滚轮 ----------
 app.onBackgroundClick = () => {
   if (state.focused) { if (state.selectedComp) selectComponent(null); return; }
-  clearPin();
+  clearSpotAll();
 };
 app.onUserActive = () => stopPatrol();
 app.onWheel = (e) => {
@@ -356,9 +421,9 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const typing = e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
   if (typing) return;
-  if (e.key === 'Escape') { if (state.selectedComp) selectComponent(null); else if (state.focused) unfocus(); else clearPin(); }
+  if (e.key === 'Escape') { if (state.selectedComp) selectComponent(null); else if (state.focused || state.pendingOpen) unfocus(); else clearSpotAll(); }
   else if (e.key === '1') setLayer('core'); else if (e.key === '2') setLayer('important'); else if (e.key === '3') setLayer('general'); else if (e.key === '0') setLayer('all');
-  else if (e.key === 'r' || e.key === 'R') { clearPin(); if (state.focused) unfocus({ fly: false }); frameLayer(state.layer); }
+  else if (e.key === 'r' || e.key === 'R') { clearSpotAll(); if (state.focused || state.pendingOpen) unfocus({ fly: false }); frameLayer(state.layer); }
   else if (e.key === 'Backspace' && state.focused) unfocus();
   else if (e.key === '/') { e.preventDefault(); panels.focusSearch(); }
 });
@@ -403,7 +468,7 @@ function patrol(dt) {
     const next = crit[(crit.findIndex((a) => a.id === p.current) + 1) % crit.length];
     p.current = next.id; p.phase = 'show'; p.until = t + 12;
     const id = next.kind === 'link' ? next.focusId : next.targetId;
-    const node = nodes.get(id); if (!node) return;
+    const node = nodes.get(id); if (!node) { p.phase = 'idle'; return; }
     if (state.layer !== 'all' && state.layer !== node.data.level) { state.layer = node.data.level; refreshLayerTabs(); applyVisibility(); }
     state.pinned = { kind: next.kind === 'link' ? 'link' : 'node', id: next.kind === 'link' ? next.targetId : id }; setSpot(pinnedSpot()); updateSpotChip();
     const off = app.camera.position.clone().sub(app.controls.target);
@@ -417,8 +482,11 @@ function impactOf(bid) { const b = nodes.get(bid)?.data; if (!b) return null; co
 function pushEvent(cls, text) { state.events.unshift({ time: nowClock(), cls, text }); state.events.length = Math.min(state.events.length, 50); panels.setTicker(state.events); }
 function upsertAlert(key, rec) {
   const prev = state.alerts.get(key);
-  if (prev && !prev.recoveredAt) { Object.assign(prev, rec, { since: prev.since }); if (prev.status !== rec.status) pushEvent(rec.status, `${rec.name} ${prev.status === 'warning' ? '告警升级为故障' : '状态变更'}`); }
-  else {
+  if (prev && !prev.recoveredAt) {
+    const prevStatus = prev.status;
+    Object.assign(prev, rec, { since: prev.since });
+    if (prevStatus !== rec.status) { pushEvent(rec.status, `${rec.name} ${prevStatus === 'warning' && rec.status === 'critical' ? '告警升级为故障' : '状态变更'}`); if (rec.status === 'critical' && (rec.kind !== 'link' || rec.level !== 'general')) panels.showBanner(prev); }
+  } else {
     state.alerts.set(key, { ...rec, since: now() });
     pushEvent(rec.status, `${rec.name} ${rec.status === 'critical' ? '故障' : '告警'}：${rec.message.replace(/^根因 /, '')}`);
     if (rec.status === 'critical' && (rec.kind !== 'link' || rec.level !== 'general')) panels.showBanner(rec);
@@ -438,15 +506,15 @@ const api = {
   focus, unfocus, setLayer, locate,
   touchLink: (id, arg) => links.touch(id, arg),
   addTransientLink: (from, to, type) => links.addTransient(from, to, type),
-  // 业务整体状态（不指定根因组件时使用）
+  // 业务整体状态（不指定根因组件时使用）；最终状态 = worst(业务级, 组件汇总)
   setBusinessStatus(id, status, message = '') {
     const node = nodes.get(id); if (!node) return;
-    node.data.statusMessage = status === 'normal' ? '' : message;
-    node.setStatus(status);
+    status ||= 'normal';
+    node.data.manualStatus = status; node.data.manualMessage = status === 'normal' ? '' : message;
     const key = `b:${id}`;
     if (status === 'normal') recoverAlert(key);
     else upsertAlert(key, { id: key, kind: 'business', targetId: id, name: node.data.name, level: node.data.level, status, message, impact: impactOf(id) });
-    if (state.focused === id) schedule('focus');
+    recomputeBusiness(id);
   },
   // 组件状态：作为根因向上汇总到业务；告警列表显示“根因：组件名”
   setComponentStatus(bid, cid, status, message = '') {
@@ -459,12 +527,8 @@ const api = {
     const key = `c:${cid}`;
     if (status === 'normal') recoverAlert(key);
     else upsertAlert(key, { id: key, kind: 'component', targetId: bid, cid, name: node.data.name, level: node.data.level, status, message: `根因 ${c.name}：${message}`, impact: impactOf(bid) });
-    const agg = node.data.components.reduce((s, x) => worst(s, x.status), 'normal');
-    const rootCause = node.data.components.find((x) => x.status === agg && agg !== 'normal');
-    node.data.statusMessage = agg === 'normal' ? '' : `根因 ${rootCause.name}：${rootCause.message}`;
-    node.data.rootCause = rootCause?.id || null;
-    node.setStatus(agg);
-    if (state.focused === bid) { state.stage?.refreshComponent(cid); schedule('focus'); if (state.selectedComp === cid) { state.selectedComp = null; selectComponent(cid); } }
+    recomputeBusiness(bid);
+    if (state.focused === bid) { state.stage?.refreshComponent(cid); if (state.selectedComp === cid) selectComponent(cid, { toggle: false }); }
   },
   setLinkStatus(id, status, message = '') {
     const rec = links.links.get(id); if (!rec) return;
@@ -482,6 +546,8 @@ const api = {
   // 指标：{ availability, latency, qps }
   setMetrics(id, m) { const b = nodes.get(id)?.data; if (!b) return; b.metricsNow = { ...metricsOf(b), ...m }; if (state.focused === id) schedule('focus'); },
   setTerminals: () => { state.stage?.setTerminals(); schedule('kpis'); },
+  stopSimulation: () => { stopSim?.(); stopSim = null; },
+  startSimulation: () => { stopSim?.(); stopSim = startSimulation(data, api); },
   terminalEvent: (bid, kind) => { if (state.focused === bid) state.stage?.terminalEvent(kind); },
   spotlight: (kind, id) => { if (!id) return clearPin(); state.pinned = { kind, id }; setSpot(pinnedSpot()); updateSpotChip(); },
   search,
@@ -489,10 +555,21 @@ const api = {
   // 批量事件：[{ type: 'touch'|'business'|'component'|'link'|'metrics'|'terminals', ... }]
   applyEvents(list) { for (const e of list) { if (e.type === 'touch') links.touch(e.id, e); else if (e.type === 'business') api.setBusinessStatus(e.id, e.status, e.message); else if (e.type === 'component') api.setComponentStatus(e.bid, e.cid, e.status, e.message); else if (e.type === 'link') api.setLinkStatus(e.id, e.status, e.message); else if (e.type === 'metrics') api.setMetrics(e.id, e.metrics); else if (e.type === 'terminals') { const b = nodes.get(e.id)?.data; if (b) Object.assign(b.terminals, e.terminals); api.setTerminals(); } } },
   // 整体重载：{ businesses, links }
-  load(snapshot) { clearScene(); buildScene(snapshot); },
-  addBusiness(b) { data.businesses.push(b); positions = layoutPositions(data.businesses); for (const n of nodes.values()) { const p = positions.get(n.data.id); if (p) tween(n.group.position, { x: p.x, y: p.y, z: p.z }, { duration: 1 }); } addNode(b); computeHubs(); applyVisibility(true); schedule('kpis'); schedule('tabs'); },
-  removeBusiness(id) { const n = nodes.get(id); if (!n) return; if (state.focused === id) unfocus({ fly: false }); for (const l of links.linksOf(id)) links.remove(l.id); app.removePickable(n.pick); n.dispose(); nodes.delete(id); data.businesses = data.businesses.filter((b) => b.id !== id); for (const k of [`b:${id}`, ...n.data.components.map((c) => `c:${c.id}`)]) state.alerts.delete(k); computeHubs(); schedule('kpis'); schedule('tabs'); schedule('alerts'); },
-  removeLink(id) { links.remove(id); state.alerts.delete(`l:${id}`); schedule('alerts'); },
+  // 整体重载：先停止演示模拟器，再清场重建
+  load(snapshot) { stopSim?.(); stopSim = null; clearScene(); buildScene({ businesses: snapshot.businesses || [], links: snapshot.links || [] }); },
+  addBusiness(b) { if (nodes.has(b.id)) return; normalizeBusiness(b); data.businesses.push(b); placeNew(b); addNode(b); computeHubs(); if (!state.focused) applyVisibility(true); schedule('kpis'); schedule('tabs'); schedule('hubs'); },
+  removeBusiness(id) {
+    const n = nodes.get(id); if (!n) return;
+    if (state.focused === id || (state.pendingOpen && state.queued)) unfocus({ fly: false });
+    if (state.pinned?.kind === 'node' && state.pinned.id === id) clearPin();
+    for (const l of links.linksOf(id)) links.remove(l.id);
+    app.removePickable(n.pick); n.dispose(); nodes.delete(id);
+    data.businesses = data.businesses.filter((b) => b.id !== id);
+    for (const k of [`b:${id}`, ...n.data.components.map((c) => `c:${c.id}`)]) state.alerts.delete(k);
+    if (state.patrol.current && !state.alerts.has(state.patrol.current)) stopPatrol();
+    computeHubs(); applyVisibility(true); schedule('kpis'); schedule('tabs'); schedule('alerts'); schedule('hubs');
+  },
+  removeLink(id) { links.remove(id); data.links = data.links.filter((l) => l.id !== id); computeHubs(); schedule('alerts'); schedule('hubs'); },
 };
 window.NetView = api;
 
@@ -500,13 +577,26 @@ window.NetView = api;
 function byLevelStats() {
   const byLevel = {};
   for (const lv of LEVELS) byLevel[lv] = { count: 0, warning: 0, critical: 0 };
-  for (const b of data.businesses) { const x = byLevel[b.level]; x.count++; if (b.status !== 'normal') x[b.status]++; }
+  for (const b of data.businesses) { const x = byLevel[b.level]; if (!x) continue; x.count++; if (b.status === 'warning' || b.status === 'critical') x[b.status]++; }
   return byLevel;
 }
 function healthScore() {
   let s = 100;
-  for (const a of state.alerts.values()) { if (a.recoveredAt) continue; const w = HEALTH_WEIGHTS[a.level][a.status] * (a.kind === 'link' ? 0.5 : 1); s -= a.kind === 'component' && a.status === 'warning' ? w * 0.6 : w; }
+  for (const a of state.alerts.values()) { if (a.recoveredAt) continue; const w = (HEALTH_WEIGHTS[a.level]?.[a.status] || 0) * (a.kind === 'link' ? 0.5 : 1); s -= a.kind === 'component' && a.status === 'warning' ? w * 0.6 : w; }
   return Math.max(0, Math.round(s));
+}
+// 业务最终状态 = worst(业务级状态, 组件汇总)，根因取最严重的组件
+function recomputeBusiness(bid) {
+  const node = nodes.get(bid); if (!node) return;
+  const d = node.data;
+  const agg = d.components.reduce((s, x) => worst(s, x.status), 'normal');
+  const rootCause = agg !== 'normal' ? d.components.find((x) => x.status === agg) : null;
+  const finalStatus = worst(agg, d.manualStatus || 'normal');
+  d.rootCause = rootCause?.id || null;
+  d.statusMessage = finalStatus === 'normal' ? '' : rootCause && agg === finalStatus ? `根因 ${rootCause.name}：${rootCause.message}` : d.manualMessage || '';
+  node.setStatus(finalStatus);
+  if (state.focused === bid) schedule('focus');
+  schedule('kpis'); schedule('tabs'); schedule('hubs');
 }
 function refreshKPIs() {
   let term = 0, remote = 0;
@@ -554,6 +644,7 @@ function refreshHubs() {
 
 // ---------- 自愈 ----------
 app.onContextLost = () => document.getElementById('gl-lost').classList.remove('hidden');
+app.onFatal = (reason) => { const o = document.getElementById('gl-lost'); o.classList.remove('hidden'); o.firstElementChild.textContent = `渲染异常，已停止自动重载：${String(reason).slice(0, 120)}`; };
 app.onBeforeReload = () => { try { sessionStorage.setItem('netview.state', JSON.stringify({ layer: state.layer, focused: state.focused })); } catch {} };
 
 // ---------- 主循环 ----------
@@ -562,6 +653,7 @@ app.updaters.add((dt, t) => {
   for (const n of nodes.values()) n.update(dt, t);
   links.update(dt, t); terminals.update(dt, t);
   state.stage?.update(dt, t);
+  for (const st of state.closing) st.update(dt, t);
   cullLabels(dt); patrol(dt);
 });
 setInterval(() => { refreshKPIs(); refreshAlerts(); refreshFlows(); refreshHubs(); if (state.focused) refreshFocusPanel(); }, 1000);
@@ -571,5 +663,5 @@ buildScene(generateData());
 try { const saved = JSON.parse(sessionStorage.getItem('netview.state') || 'null'); if (saved?.layer) state.layer = saved.layer; sessionStorage.removeItem('netview.state'); } catch {}
 applyVisibility(true); refreshLayerTabs(); refreshKPIs();
 frameLayer(state.layer, 0.01);
-startSimulation(data, api);
+stopSim = startSimulation(data, api);
 app.start();

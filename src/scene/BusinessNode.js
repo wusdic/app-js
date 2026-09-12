@@ -34,7 +34,8 @@ export class BusinessNode {
 
     this.el = document.createElement('div');
     this.el.className = `lbl biz ${business.level}${business.labelAbove ? ' above' : ''}`;
-    this.el.innerHTML = `<span class="dot"></span><span class="txt">${business.name}</span>`;
+    this.el.innerHTML = `<span class="in"><span class="dot"></span><span class="txt"></span></span>`;
+    this.el.querySelector('.txt').textContent = business.name;
     this.el.onclick = (e) => { e.stopPropagation(); this.onClick?.(e); };
     this.el.onpointerenter = (e) => this.onHoverLabel?.(true, { x: e.clientX, y: e.clientY });
     this.el.onpointermove = (e) => this.onHoverLabel?.(true, { x: e.clientX, y: e.clientY });

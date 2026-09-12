@@ -10,12 +10,13 @@ const durText = (sec) => (sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)} 分
 
 // 按 data-id 增量同步列表：保留 DOM 节点，只更新文本与顺序；鼠标悬停在列表上时冻结排序
 function syncList(container, items, { create, update, hoverFreeze = true, tail = null }) {
-  const keep = new Set(items.map((x) => x.id));
-  for (const el of [...container.children]) if (el.dataset.id && !keep.has(el.dataset.id)) el.remove();
+  const keep = new Set(items.map((x) => String(x.id)));
+  for (const el of [...container.children]) if (el.dataset.id && !keep.has(el.dataset.id)) { if (el.matches(':hover')) el.onmouseleave?.(); el.remove(); }
   const frozen = hoverFreeze && container.matches(':hover');
   items.forEach((it, i) => {
-    let el = container.querySelector(`[data-id="${CSS.escape(it.id)}"]`);
-    if (!el) { el = create(it); el.dataset.id = it.id; container.appendChild(el); }
+    const id = String(it.id);
+    let el = container.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (!el) { el = create(it); el.dataset.id = id; el.classList.add('enter'); el.addEventListener('animationend', () => el.classList.remove('enter'), { once: true }); container.appendChild(el); }
     update(el, it);
     if (!frozen && container.children[i] !== el) container.insertBefore(el, container.children[i] || null);
   });
@@ -42,16 +43,17 @@ export function initPanels(h) {
   const renderSearch = () => {
     if (!srItems.length) { searchResults.classList.add('hidden'); return; }
     searchResults.classList.remove('hidden');
-    searchResults.innerHTML = srItems.map((r, i) => `<div class="sr ${i === srIndex ? 'on' : ''}" data-id="${r.id}"><span class="st ${r.status}"></span><span class="n">${esc(r.name)}</span><span class="d">${LEVEL_NAME[r.level]} · ${esc(r.dept)}</span></div>`).join('');
+    searchResults.innerHTML = srItems.map((r, i) => `<div class="sr ${i === srIndex ? 'on' : ''}" data-id="${esc(r.id)}"><span class="st ${r.status}"></span><span class="n">${esc(r.name)}</span><span class="d">${LEVEL_NAME[r.level]} · ${esc(r.dept)}</span></div>`).join('');
     for (const el of searchResults.querySelectorAll('.sr')) { el.onclick = (e) => h.onSearchPick(el.dataset.id, e.shiftKey); el.onmouseenter = () => h.onSearchHover(el.dataset.id); }
   };
   searchInput.oninput = () => { srItems = h.onSearch(searchInput.value.trim()); srIndex = 0; renderSearch(); };
   searchInput.onkeydown = (e) => {
     if (e.key === 'ArrowDown') { srIndex = Math.min(srItems.length - 1, srIndex + 1); renderSearch(); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { srIndex = Math.max(0, srIndex - 1); renderSearch(); e.preventDefault(); }
-    else if (e.key === 'Enter') { const r = srItems[srIndex]; if (r) h.onSearchPick(r.id, e.shiftKey); }
+    else if (e.key === 'Enter') { e.preventDefault(); const r = srItems[srIndex]; if (r) h.onSearchPick(r.id, e.shiftKey); }
     else if (e.key === 'Escape') { searchInput.value = ''; srItems = []; renderSearch(); searchInput.blur(); h.onSearch(''); }
   };
+  searchResults.onmouseleave = () => h.onSearchHover(null);
   searchInput.onblur = () => setTimeout(() => searchResults.classList.add('hidden'), 150);
   searchInput.onfocus = () => { if (srItems.length) searchResults.classList.remove('hidden'); };
 
@@ -281,6 +283,6 @@ export function initPanels(h) {
     },
     setToggle(key, on) { const sw = settings.querySelector(`.sw[data-key="${key}"]`); sw?.classList.toggle('on', on); },
     focusSearch() { searchInput.focus(); searchInput.select(); },
-    clearSearch() { searchInput.value = ''; srItems = []; renderSearch(); },
+    clearSearch() { searchInput.value = ''; srItems = []; renderSearch(); searchInput.blur(); },
   };
 }

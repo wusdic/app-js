@@ -45,7 +45,7 @@ export function createLayers() {
 
     const el = document.createElement('div');
     el.className = 'lbl layer';
-    el.innerHTML = `<span class="ln">${cfg.label}</span><small>${cfg.en}</small><b class="n"></b>`;
+    el.innerHTML = `<span class="in"><span class="ln">${cfg.label}</span><small>${cfg.en}</small><b class="n"></b></span>`;
     const label = new CSS2DObject(el);
     group.add(label);
     layers[level] = { disc, mat, label, el, cfg, dimTarget: 1, ghostTarget: 0, dim: 1, ghost: 0 };

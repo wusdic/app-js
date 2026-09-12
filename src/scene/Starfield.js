@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // 星空背景：远处的静态星点 + 缓慢闪烁，营造氛围但不抢视线
-export function createStarfield(count = 2600) {
+export function createStarfield(count = 2600, prUniform = { value: Math.min(window.devicePixelRatio, 2) }) {
   const pos = new Float32Array(count * 3);
   const seedArr = new Float32Array(count);
   const size = new Float32Array(count);
@@ -20,7 +20,7 @@ export function createStarfield(count = 2600) {
   g.setAttribute('aSeed', new THREE.BufferAttribute(seedArr, 1));
   g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
   const m = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+    uniforms: { uTime: { value: 0 }, uPixelRatio: prUniform },
     vertexShader: `
       attribute float aSeed; attribute float aSize; uniform float uTime; uniform float uPixelRatio;
       varying float vA; varying float vSeed;

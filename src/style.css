@@ -212,7 +212,8 @@ button { font-family: inherit; font-size: inherit; }
 
 /* ---------- 告警 ---------- */
 .alert-list { display: flex; flex-direction: column; gap: 0.45rem; overflow: auto; min-height: 0; max-height: 44vh; }
-.alert { position: relative; padding: 0.6rem 0.75rem 0.6rem 1.05rem; background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.05); cursor: pointer; transition: background .2s; animation: slidein .35s ease-out; }
+.alert { position: relative; padding: 0.6rem 0.75rem 0.6rem 1.05rem; background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.05); cursor: pointer; transition: background .2s; }
+.alert.enter { animation: slidein .35s ease-out; }
 .alert:hover { background: rgba(120, 180, 255, 0.08); }
 .alert::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--warning); }
 .alert.critical::before { background: var(--critical); box-shadow: 0 0 0.75rem var(--critical); animation: beat 3s infinite; }
@@ -258,7 +259,7 @@ button { font-family: inherit; font-size: inherit; }
 .crumb .sep { color: var(--fg-faint); cursor: default; }
 .spot-chip { pointer-events: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0.7rem; border: 1px solid rgba(53, 212, 255, .5); color: var(--data); background: rgba(53, 212, 255, .08); }
 .spot-chip i { cursor: pointer; font-style: normal; color: var(--fg-dim); } .spot-chip i:hover { color: #fff; }
-.ticker { flex: 1 1 0; min-width: 0; display: flex; gap: 1.6rem; justify-content: center; font-size: 0.85rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+.ticker { flex: 1 1 0; min-width: 0; display: flex; gap: 1.6rem; justify-content: flex-start; font-size: 0.85rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
 .ticker .ev { flex: none; }
 .ticker .ev { display: flex; align-items: center; gap: 0.45rem; }
 .ticker .ev i { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--fg-faint); flex: none; }
@@ -281,7 +282,9 @@ button { font-family: inherit; font-size: inherit; }
 .seg button.on { background: rgba(120, 180, 255, .15); color: #fff; }
 
 /* ---------- 3D 标签 ---------- */
-.lbl { pointer-events: none; white-space: nowrap; font-size: 0.92rem; color: var(--fg); letter-spacing: 1px; text-shadow: 0 0 6px rgba(0, 0, 0, .9); transition: opacity .45s; transform: translateY(1.05rem); will-change: transform; contain: layout paint; }
+/* CSS2DRenderer 每帧改写根元素的 transform，所以位移写在内层 .in 上（--dy） */
+.lbl { pointer-events: none; white-space: nowrap; font-size: 0.92rem; color: var(--fg); letter-spacing: 1px; text-shadow: 0 0 6px rgba(0, 0, 0, .9); transition: opacity .45s; will-change: transform; --dy: 1.05rem; }
+.lbl .in { display: inline-block; transform: translateY(var(--dy)); }
 .lbl.core { font-size: 1rem; color: #eafbff; }
 .lbl.general { font-size: 0.92rem; color: #c3d1e8; }
 .lbl .dot { display: inline-block; width: 0.4rem; height: 0.4rem; border-radius: 50%; margin-right: 0.4rem; vertical-align: middle; background: transparent; }
@@ -292,19 +295,19 @@ button { font-family: inherit; font-size: inherit; }
 .lbl.critical .dot { background: var(--critical); box-shadow: 0 0 0.45rem var(--critical); }
 .lbl.dim { opacity: 0.25; }
 #labels.focus-mode .lbl.dim { opacity: 0.1; }
-.lbl.above { transform: translateY(-1.05rem); }
+.lbl.above { --dy: -1.05rem; }
 .lbl.biz { pointer-events: auto; cursor: pointer; }
 .lbl.biz.dim { pointer-events: none; }
 .lbl.biz:hover .txt { color: #fff; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(138, 242, 255, .6); }
-.lbl.layer { font-size: 0.85rem; color: var(--fg-dim); letter-spacing: 4px; transform: none; }
+.lbl.layer { font-size: 0.85rem; color: var(--fg-dim); letter-spacing: 4px; --dy: 0; }
 .lbl.layer small { display: block; letter-spacing: 3px; font-size: 0.7rem; color: var(--fg-faint); }
 .lbl.layer .n { display: block; font-weight: 400; font-size: 0.77rem; letter-spacing: 1px; margin-top: 2px; }
 .lbl.layer .n.warning { color: var(--warning); } .lbl.layer .n.critical { color: var(--critical); }
-.lbl.stage-title { font-size: 1.15rem; color: #eafbff; letter-spacing: 3px; transform: translateY(-2rem); }
-.lbl.comp { font-size: 0.85rem; color: #c6d8ef; transform: translateY(0.9rem); pointer-events: auto; cursor: pointer; }
+.lbl.stage-title { font-size: 1.15rem; color: #eafbff; letter-spacing: 3px; --dy: -2rem; }
+.lbl.comp { font-size: 0.85rem; color: #c6d8ef; --dy: 1.2rem; pointer-events: auto; cursor: pointer; }
 .lbl.comp:hover { color: #fff; }
 .lbl.comp.warning { color: var(--warning); } .lbl.comp.critical { color: var(--critical); }
-.lbl.portal { font-size: 0.85rem; color: #b7d3f5; transform: translateY(-1.7rem); text-align: center; pointer-events: auto; cursor: pointer; }
+.lbl.portal { font-size: 0.85rem; color: #b7d3f5; --dy: -1.9rem; text-align: center; pointer-events: auto; cursor: pointer; }
 .lbl.portal:hover { color: #fff; }
 .lbl.portal small { display: none; font-size: 0.7rem; color: var(--fg-faint); letter-spacing: 1px; }
 .lbl.portal.sub small { display: block; }

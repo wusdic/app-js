@@ -31,7 +31,8 @@ export class LinkSystem {
     if (!A || !B) return null;
     const curve = makeArc(A.position, B.position, { startOffset: A.radius * 1.05, endOffset: B.radius * 1.05 });
     const tube = new FlowTube(curve, { color: colorOf.link(link), baseAlpha: 0, bidirectional: !!link.bidirectional });
-    const rec = { ...link, tube, lastActive: -1e9, activeSince: -1e9, lastPulse: -1e9, active: false, dir: 1, count: 0, recent: [], removing: false, removeAt: 0, transient: !!link.transient, glowEnabled: true };
+    if (!link.status) link.status = 'normal';
+    const rec = { ...link, src: link, tube, lastActive: -1e9, activeSince: -1e9, lastPulse: -1e9, active: false, dir: 1, count: 0, recent: [], removing: false, removeAt: 0, transient: !!link.transient, glowEnabled: true };
     this.group.add(tube.group);
     this.links.set(link.id, rec);
     this._adjAdd(rec.from, rec); this._adjAdd(rec.to, rec);
@@ -63,15 +64,16 @@ export class LinkSystem {
   touch(id, arg = 1) {
     const rec = this.links.get(id);
     if (!rec || rec.removing) return;
-    const opts = typeof arg === 'object' ? arg : { dir: arg };
-    const dir = opts.dir ?? 1, count = opts.count ?? 1;
-    const at = opts.at ? opts.at / 1000 - (Date.now() / 1000 - this.now) : this.now; // 外部时间戳（ms）换算到墙钟秒
-    rec.lastActive = Math.max(rec.lastActive, at);
+    const opts = typeof arg === 'object' && arg !== null ? arg : { dir: arg };
+    const dir = opts.dir ?? 1, count = Math.max(1, opts.count ?? 1);
+    // 外部时间戳只用于频次统计；“当前活跃”按收到事件的时刻判断，避免过期时间戳造成活跃 / 熄灭抖动
+    const at = opts.at ? Math.min(this.now, opts.at / 1000 - (Date.now() / 1000 - this.now)) : this.now;
+    rec.lastActive = this.now;
     rec.count += count;
-    for (let i = 0; i < Math.min(count, 20); i++) rec.recent.push(at);
-    if (rec.recent.length > 2000) rec.recent.splice(0, rec.recent.length - 1000);
+    rec.recent.push({ t: at, n: count });
+    if (rec.recent.length > 600) rec.recent.splice(0, rec.recent.length - 300);
     if (!rec.active) {
-      rec.active = true; rec.activeSince = at; rec.dir = dir;
+      rec.active = true; rec.activeSince = this.now; rec.dir = dir;
       rec.tube.setActive(true, dir);
       this.emit({ type: 'active', link: rec, dir });
     }
@@ -87,12 +89,13 @@ export class LinkSystem {
     const rec = this.links.get(id);
     if (!rec) return;
     rec.status = status;
+    if (rec.src) rec.src.status = status; // 回写原始数据对象，保持 NetView.data 与画面一致
     rec.tube.setColor(colorOf.link(rec), status === 'normal' ? 1 : THEME.hdrGain);
     rec.tube.setAlarm(status === 'critical');
     if (!silent) this.emit({ type: 'status', link: rec });
   }
 
-  ratePerMin(rec) { const cutoff = this.now - 60; while (rec.recent.length && rec.recent[0] < cutoff) rec.recent.shift(); return rec.recent.length; }
+  ratePerMin(rec) { const cutoff = this.now - 60; while (rec.recent.length && rec.recent[0].t < cutoff) rec.recent.shift(); let n = 0; for (const r of rec.recent) n += r.n; return n; }
   activeLinks() { const list = [...this.links.values()].filter((l) => l.active && !l.removing); const r = new Map(list.map((l) => [l.id, this.ratePerMin(l)])); return list.sort((a, b) => r.get(b.id) - r.get(a.id)); }
 
   update(dt, time) {

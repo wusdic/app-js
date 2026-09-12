@@ -37,8 +37,8 @@ export class App {
     this.controls.autoRotateSpeed = 0.3;
     this.autoRotateWanted = true;
     this.idleTimer = 0;
-    // 相机自己在动（自动旋转 / 飞行 / 阻尼）时也要重新做一次命中检测
-    this.controls.addEventListener('change', () => { this.pointerMoved = true; });
+    // 相机自己在动（自动旋转 / 飞行 / 阻尼）时也要重新做命中检测，但只在命中对象变化时回调
+    this.controls.addEventListener('change', () => { this.cameraMoved = true; });
 
     // 后期：MSAA 渲染目标 → 轻辉光（半分辨率）→ 色调映射输出
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
@@ -57,7 +57,8 @@ export class App {
     this.raycaster.params.Points = { threshold: 0.6 };
     this.pointer = new THREE.Vector2(-10, -10);
     this.pointerPx = { x: 0, y: 0 };
-    this.pointerMoved = false;
+    this.pointerMoved = false; this.cameraMoved = false; this.pickTick = 0;
+    this.prUniform = { value: 1 }; // 实际渲染像素比，供点精灵着色器使用
     this.pickables = new Map(); // object → { object, tier, enabled, onHover, onClick }
     this.hovered = null;
     this.lastFrame = performance.now();
@@ -77,15 +78,9 @@ export class App {
   _bindEvents() {
     const c = this.canvas;
     let downPos = null;
-    c.addEventListener('pointermove', (e) => {
-      const r = c.getBoundingClientRect();
-      this.pointerPx.x = e.clientX - r.left; this.pointerPx.y = e.clientY - r.top;
-      this.pointer.x = (this.pointerPx.x / r.width) * 2 - 1;
-      this.pointer.y = -(this.pointerPx.y / r.height) * 2 + 1;
-      this.pointerMoved = true;
-    });
+    c.addEventListener('pointermove', (e) => { this._setPointer(e); this.pointerMoved = true; });
     c.addEventListener('pointerleave', () => { this.pointer.set(-10, -10); this.pointerMoved = true; });
-    c.addEventListener('pointerdown', (e) => { downPos = { x: e.clientX, y: e.clientY }; this._userActive(); });
+    c.addEventListener('pointerdown', (e) => { this._setPointer(e); downPos = { x: e.clientX, y: e.clientY }; this._userActive(); });
     c.addEventListener('pointerup', (e) => {
       if (!downPos) return;
       const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5;
@@ -93,6 +88,9 @@ export class App {
       if (!moved && e.button === 0) this._click(e);
     });
     c.addEventListener('wheel', (e) => { this._userActive(); this.onWheel?.(e); }, { passive: true });
+    // 面板点击与键盘也算“有人在操作”
+    document.addEventListener('pointerdown', () => this._userActive(), { capture: true });
+    document.addEventListener('keydown', () => this._userActive(), { capture: true });
     let resizeTimer = 0;
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => this.resize(), 150); });
   }
@@ -100,20 +98,36 @@ export class App {
   // 7×24 大屏自愈：WebGL 上下文丢失 → 提示并在恢复后重载；渲染循环停滞 → 重载；页面隐藏时不累计时间
   _bindResilience() {
     this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.contextLost = true; this.onContextLost?.(); });
-    this.canvas.addEventListener('webglcontextrestored', () => { this.onBeforeReload?.(); location.reload(); });
+    this.canvas.addEventListener('webglcontextrestored', () => this._safeReload('context restored'));
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.lastFrame = performance.now(); });
     setInterval(() => {
       if (document.visibilityState !== 'visible' || this.contextLost) return;
-      if (performance.now() - this.lastFrame > 10000) { this.onBeforeReload?.(); location.reload(); }
+      if (performance.now() - this.lastFrame > 10000) this._safeReload('render loop stalled');
     }, 5000);
   }
 
+  _setPointer(e) {
+    const r = this.canvas.getBoundingClientRect();
+    this.pointerPx.x = e.clientX - r.left; this.pointerPx.y = e.clientY - r.top;
+    this.pointer.x = (this.pointerPx.x / r.width) * 2 - 1;
+    this.pointer.y = -(this.pointerPx.y / r.height) * 2 + 1;
+  }
   _userActive() { this.controls.autoRotate = false; this.idleTimer = 0; this.onUserActive?.(); }
 
+  // 触摸设备上点按不会先产生 pointermove，所以点击时用事件坐标重新拾取
   _click(e) {
+    if (e) this._setPointer(e);
     const hit = this._pick();
-    if (hit) hit.entry.onClick?.(hit.intersection, e);
-    else this.onBackgroundClick?.(e);
+    try { if (hit) hit.entry.onClick?.(hit.intersection, e); else this.onBackgroundClick?.(e); } catch (err) { console.error(err); }
+  }
+
+  // 重载保护：5 分钟内最多自动重载 2 次，超过则显示错误遮罩而不是无限重载
+  _safeReload(reason) {
+    let times = [];
+    try { times = JSON.parse(sessionStorage.getItem('netview.reloads') || '[]').filter((t) => Date.now() - t < 300000); } catch {}
+    if (times.length >= 2) { console.error('自动重载次数过多，停止重载：', reason); this.onFatal?.(reason); return; }
+    try { sessionStorage.setItem('netview.reloads', JSON.stringify([...times, Date.now()])); } catch {}
+    this.onBeforeReload?.(); location.reload();
   }
 
   // 分层拾取：业务节点 / 组件 / 出口（tier 0）优先于连线（1）优先于终端点（2）；不可见或被禁用的对象不参与
@@ -151,6 +165,7 @@ export class App {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(this.renderPixelRatio);
+    this.prUniform.value = this.renderPixelRatio;
     this.renderer.setSize(w, h);
     this.composer.setPixelRatio(this.renderPixelRatio);
     this.composer.setSize(w, h);
@@ -172,10 +187,11 @@ export class App {
     this.onQuality?.(q, auto);
   }
 
-  _adapt(ms) {
-    this.frameMs += (ms - this.frameMs) * 0.05;
+  // 以每帧主线程工作时长（而非受刷新率限制的帧间隔）判断是否降级 / 恢复
+  _adapt(workMs, frameMs) {
+    this.frameMs += (workMs - this.frameMs) * 0.05;
     if (!this.autoQuality) return;
-    if (this.frameMs > QUALITY.degradeMs) { this.slowFor += ms; this.fastFor = 0; } else if (this.frameMs < QUALITY.recoverMs) { this.fastFor += ms; this.slowFor = 0; } else { this.slowFor = 0; this.fastFor = 0; }
+    if (this.frameMs > QUALITY.degradeMs) { this.slowFor += frameMs; this.fastFor = 0; } else if (this.frameMs < QUALITY.recoverMs) { this.fastFor += frameMs; this.slowFor = 0; } else { this.slowFor = 0; this.fastFor = 0; }
     const order = ['high', 'balanced', 'low'];
     const i = order.indexOf(this.quality);
     if (this.slowFor > 3000 && i < 2) { this.slowFor = 0; this.setQuality(order[i + 1], { auto: true }); }
@@ -190,14 +206,20 @@ export class App {
       const dt = Math.min(ms / 1000, 0.05);
       this.lastFrame = now;
       this.time += dt;
+      const t0 = performance.now();
       try {
         updateTweens(dt);
-        if (this.pointerMoved) {
-          this.pointerMoved = false;
+        // 指针移动：重新拾取并回调；相机移动：每 2 帧重新拾取，只在命中对象变化时回调（避免悬停意图计时器被每帧重置）
+        const cam = this.cameraMoved && (++this.pickTick & 1) === 0;
+        if (this.pointerMoved || cam) {
+          const moved = this.pointerMoved;
+          this.pointerMoved = false; this.cameraMoved = false;
           const hit = this._pick();
           const entry = hit?.entry || null;
-          if (this.hovered !== entry) { this.hovered?.onHover?.(null); this.hovered = entry; }
-          entry?.onHover?.(hit.intersection, this.pointerPx);
+          try {
+            if (this.hovered !== entry) { this.hovered?.onHover?.(null); this.hovered = entry; entry?.onHover?.(hit.intersection, this.pointerPx); }
+            else if (moved) entry?.onHover?.(hit.intersection, this.pointerPx);
+          } catch (err) { console.error(err); }
           this.canvas.style.cursor = entry?.onClick ? 'pointer' : 'default';
         }
         for (const u of this.updaters) u(dt, this.time);
@@ -209,12 +231,13 @@ export class App {
         this.errorStreak = 0;
       } catch (err) {
         console.error(err);
-        if (++this.errorStreak >= 3) { this.onBeforeReload?.(); location.reload(); }
+        if (++this.errorStreak >= 3) { this.errorStreak = 0; this._safeReload(String(err)); }
       }
-      if (ms < 500) this._adapt(ms);
+      if (ms < 500) this._adapt(performance.now() - t0, ms);
     };
     loop();
   }
 }
 
-function isShown(o) { for (let p = o; p; p = p.parent) if (p.visible === false) return false; return true; }
+// 可见 = 祖先链上没有 visible=false，且仍挂在场景树上（已移除的对象不参与拾取）
+function isShown(o) { let p = o; for (; p; p = p.parent) { if (p.visible === false) return false; if (!p.parent) break; } return !!p?.isScene; }
