@@ -7,7 +7,7 @@ export const THEME = {
   terminal: 0x7fa9d6,
   disc: { core: 0x63c9ff, important: 0x4b8fff, general: 0x4f6fc9 },
   stage: 0x4fd9c8,
-  hdrGain: 1.45, // 状态色与流转辉光在 HDR 缓冲里的增益：让“异常”和“正在流转”成为画面最亮的元素
+  hdrGain: 1.5, // 状态色与流转辉光在 HDR 缓冲里的增益：让“异常”和“正在流转”成为画面最亮的元素
 };
 
 export const LEVELS = ['core', 'important', 'general'];
@@ -24,7 +24,7 @@ export const LAYOUT = {
   nodeRadius: { core: 1.6, important: 1.2, general: 0.95 },
   camera: { position: [0, 57, 94], target: [0, 0, 0] }, // 全景视角（默认）
   defaultLayer: 'core', // 页面打开时默认的重点层级：core | important | general | all（其它层虚化）
-  ghost: { node: 0.4, abnormalNode: 0.78, disc: 0.55 }, // 虚化层的可见度
+  ghost: { node: 0.45, abnormalNode: 0.8, disc: 0.6 }, // 虚化层的可见度
   intro: { enabled: true, camDistance: 1.45, camLift: 0.12 }, // 开场：逐步生成 + 轻微推进
   focus: { offset: [0, 30, 50], fov: 36 },
 };
@@ -37,8 +37,9 @@ export const LINK_RULES = {
   pulseSpeedUnits: 14, // 辉光速度（世界单位 / 秒）
   tailUnits: 5, // 辉光尾巴长度（世界单位）
   arrowInset: 0.9, // 方向箭头距端点的距离（世界单位）
+  radius: 0.13, // 管线半径
   // 底线亮度：intra = 两端都在当前层；cross = 一端在当前层；other = 与当前层无关；all = 查看全部；spot = 聚光中的连线
-  base: { intra: 0.3, cross: 0.1, other: 0.035, all: 0.06, spot: 0.36 },
+  base: { intra: 0.36, cross: 0.12, other: 0.04, all: 0.075, spot: 0.42 },
 };
 
 // 告警节律：全站只有一种慢速“心跳”（快起慢落），不做 1Hz 以上的频闪

@@ -714,8 +714,8 @@ function runIntro(skip) {
   // 2) 节点按层依次生成
   LEVELS.forEach((lv, li) => { const list = [...nodes.values()].filter((n) => n.data.level === lv); list.forEach((n, i) => at(650 + li * 420 + i * 35, () => n.playReveal())); });
   // 3) 连线通电：淡入 + 辉光短暂增强 + 核心层扫过一波辉光
-  at(1900, () => { applyVisibility(); tweenValue(app.bloom.strength, 0.85, { duration: 0.6 }, (v) => (app.bloom.strength = v)); });
-  at(2500, () => tweenValue(app.bloom.strength, 0.45, { duration: 1.2 }, (v) => (app.bloom.strength = v)));
+  at(1900, () => { applyVisibility(); tweenValue(app.bloom.strength, app.bloomBase + 0.45, { duration: 0.6 }, (v) => (app.bloom.strength = v)); });
+  at(2500, () => tweenValue(app.bloom.strength, app.bloomBase, { duration: 1.2 }, (v) => (app.bloom.strength = v)));
   at(2200, () => { const list = [...links.links.values()].filter((l) => linkRelation(l) !== 'other'); list.forEach((l, i) => at(2200 + i * 45, () => l.tube.pulse(1))); state.introQueue.sort((x, y) => x.at - y.at); });
   // 4) 终端尘埃浮现
   at(2600, () => tweenValue(0, 1, { duration: 1.2 }, (v) => terminals.setDim(v)));

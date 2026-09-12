@@ -32,7 +32,8 @@ button { font-family: inherit; font-size: inherit; }
     radial-gradient(ellipse 60% 50% at 50% 60%, rgba(30, 70, 140, 0.22), transparent 70%),
     radial-gradient(ellipse 40% 30% at 80% 20%, rgba(60, 40, 120, 0.16), transparent 70%),
     linear-gradient(180deg, #060b19 0%, #040711 100%); }
-#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; contain: strict; }
+#vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse 72% 68% at 50% 52%, transparent 55%, rgba(2, 5, 14, 0.55) 100%); }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; contain: strict; z-index: 2; }
 
 .ui { position: absolute; z-index: 5; pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity .7s ease, transform .7s ease; }
 .ui.in { opacity: 1; transform: none; }

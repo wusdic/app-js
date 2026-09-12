@@ -39,7 +39,7 @@ export class TerminalCloud {
           vec3 p = aCenter + vec3(cos(ang) * aOrbit.x, aLife.z + sin(uTime * 0.7 + aSeed * 10.0) * 0.25, sin(ang) * aOrbit.x);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          vA = alive * env * (0.22 + 0.28 * aSeed) * aVis;
+          vA = alive * env * (0.3 + 0.35 * aSeed) * aVis;
           gl_PointSize = (1.2 + aSeed * 0.8) * uPixelRatio * (60.0 / -mv.z) * alive;
         }`,
       fragmentShader: `
@@ -62,7 +62,7 @@ export class TerminalCloud {
   }
 
   // 每个业务的目标粒子数：与在线终端数成对数关系，避免核心业务粒子淹没画面
-  targetFor(b) { return Math.min(40, Math.round(3 + Math.log2(1 + b.terminals.local) * 4)); }
+  targetFor(b) { return Math.min(56, Math.round(4 + Math.log2(1 + b.terminals.local) * 5)); }
 
   spawn(node) {
     if (!this.free.length) return;

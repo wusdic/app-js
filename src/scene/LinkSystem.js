@@ -30,7 +30,7 @@ export class LinkSystem {
     const A = this.nodes.get(link.from), B = this.nodes.get(link.to);
     if (!A || !B) return null;
     const curve = makeArc(A.position, B.position, { startOffset: A.radius * 1.05, endOffset: B.radius * 1.05 });
-    const tube = new FlowTube(curve, { color: colorOf.link(link), baseAlpha: 0, bidirectional: !!link.bidirectional });
+    const tube = new FlowTube(curve, { color: colorOf.link(link), baseAlpha: 0, bidirectional: !!link.bidirectional, radius: LINK_RULES.radius });
     if (!link.status) link.status = 'normal';
     const rec = { ...link, src: link, tube, lastActive: -1e9, activeSince: -1e9, lastPulse: -1e9, active: false, dir: 1, count: 0, recent: [], removing: false, removeAt: 0, transient: !!link.transient, glowEnabled: true };
     this.group.add(tube.group);
