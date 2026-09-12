@@ -556,7 +556,7 @@ const api = {
   applyEvents(list) { for (const e of list) { if (e.type === 'touch') links.touch(e.id, e); else if (e.type === 'business') api.setBusinessStatus(e.id, e.status, e.message); else if (e.type === 'component') api.setComponentStatus(e.bid, e.cid, e.status, e.message); else if (e.type === 'link') api.setLinkStatus(e.id, e.status, e.message); else if (e.type === 'metrics') api.setMetrics(e.id, e.metrics); else if (e.type === 'terminals') { const b = nodes.get(e.id)?.data; if (b) Object.assign(b.terminals, e.terminals); api.setTerminals(); } } },
   // 整体重载：{ businesses, links }
   // 整体重载：先停止演示模拟器，再清场重建
-  load(snapshot) { stopSim?.(); stopSim = null; clearScene(); buildScene({ businesses: snapshot.businesses || [], links: snapshot.links || [] }); },
+  load(snapshot) { stopSim?.(); stopSim = null; clearScene(); buildScene({ businesses: snapshot.businesses || [], links: snapshot.links || [] }); frameLayer(state.layer); },
   addBusiness(b) { if (nodes.has(b.id)) return; normalizeBusiness(b); data.businesses.push(b); placeNew(b); addNode(b); computeHubs(); if (!state.focused) applyVisibility(true); schedule('kpis'); schedule('tabs'); schedule('hubs'); },
   removeBusiness(id) {
     const n = nodes.get(id); if (!n) return;
