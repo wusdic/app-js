@@ -20,11 +20,11 @@ const fragmentShader = `
     glow *= uGlow;
     float base = uBase * (1.0 + uHover * 1.6);
     base *= mix(1.0, 0.7 + 0.3 * uBeat, uAlarm);   // 故障连线：慢速心跳，不频闪
-    float alpha = base + glow * 1.4;
+    float alpha = base + glow * 0.85;
     if (uEdgeFade > 0.5) alpha *= smoothstep(1.0, 0.7, vUv.x);
     // 两端各淡出一小段，管线不压在底座环上
     alpha *= smoothstep(0.0, uEndFade, vUv.x) * smoothstep(1.0, 1.0 - uEndFade, vUv.x);
-    vec3 col = uColor * (0.85 + 1.2 * glow + 0.4 * uHover);
+    vec3 col = uColor * (0.85 + 0.5 * glow + 0.4 * uHover);   // 辉光头部保留色相，不烧成纯白
     gl_FragColor = vec4(col * alpha * uDim, alpha * uDim);
   }`;
 

@@ -41,7 +41,7 @@ export class BusinessNode {
     this.el.onpointermove = (e) => this.onHoverLabel?.(true, { x: e.clientX, y: e.clientY });
     this.el.onpointerleave = () => this.onHoverLabel?.(false);
     this.label = new CSS2DObject(this.el);
-    this.label.position.set(0, business.labelAbove ? this.radius * 1.5 : 0, business.labelAbove ? 0 : this.radius * 1.05);
+    this.label.position.set(0, business.labelAbove ? this.radius * 1.8 : 0, business.labelAbove ? 0 : this.radius * 1.1);
     this.group.add(this.label);
 
     this.hover = 0; this.dim = 1; this.dimTarget = 1; this.hoverTarget = 0; this.culled = false; this.ghost = false; this.reveal = 1; this.revealed = true;

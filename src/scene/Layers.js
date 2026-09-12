@@ -8,7 +8,7 @@ import { beamTexture } from '../core/textures.js';
 const wallShader = {
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `uniform vec3 uColor; uniform float uDim; uniform float uGhost; uniform float uReveal; varying vec2 vUv;
-    void main(){ float a = pow(vUv.y, 1.6) * 0.32 * uDim * mix(1.0, 0.55, uGhost) * step(0.999, uReveal); gl_FragColor = vec4(uColor * a, a); }`,
+    void main(){ float a = pow(vUv.y, 2.0) * 0.13 * uDim * mix(1.0, 0.55, uGhost) * step(0.999, uReveal); gl_FragColor = vec4(uColor * a, a); }`,
 };
 
 // 分层圆盘：3 圈刻度环 + 外半段 12 条辐条 + 外缘边 + 只在当前层运转的雷达扫描；虚化层只保留轮廓与浅底
@@ -25,17 +25,17 @@ const discShader = {
       float ang = atan(vPos.y, vPos.x);
       // 线宽随屏幕像素自适应：拉远时仍保持约 1.5~2 像素，轮廓不消失
       float px = fwidth(len);
-      float wThin = max(0.07, px * 1.2), wRim = max(0.22, px * 2.2);
+      float wThin = max(0.07, px * 1.2), wRim = max(0.15, px * 1.7);
       float fr = fract(r * 3.0);
       float rings = lineAt(min(fr, 1.0 - fr) / 3.0 * uRadius, wThin) * 0.5;
       float fa = fract(ang / 6.2831853 * 12.0);
       float spokes = lineAt(min(fa, 1.0 - fa) * (6.2831853 * len / 12.0), wThin) * 0.3 * smoothstep(0.5, 0.68, r);
-      float rim = lineAt((1.0 - r) * uRadius, wRim) * 1.35 + lineAt((1.0 - r) * uRadius, max(3.0, px * 12.0)) * 0.22;
+      float rim = lineAt((1.0 - r) * uRadius, wRim) * 0.62 + lineAt((1.0 - r) * uRadius, max(2.5, px * 10.0)) * 0.08; // 外缘：清晰细线 + 极淡内晕，不进辉光
       float fill = 0.13 * (1.0 - r * 0.7);
       float sweep = pow(fract(ang / 6.2831853 - uTime * 0.0167), 12.0) * 0.26 * smoothstep(0.1, 0.5, r) * uScan;
       // 每 9 秒一圈从中心扩散的能量环
       float pr = fract(uTime / 9.0);
-      float pulse = lineAt(abs(r - pr) * uRadius, max(0.6, px * 3.0)) * 0.45 * (1.0 - pr) * uScan;
+      float pulse = lineAt(abs(r - pr) * uRadius, max(0.6, px * 3.0)) * 0.38 * (1.0 - pr) * uScan;
       float detail = (rings + spokes + sweep + pulse) * (1.0 - uGhost);
       float a = (fill * mix(1.0, 0.55, uGhost) + detail + rim * mix(1.0, 0.6, uGhost)) * uDim;
       // 开场：从中心向外画出，带一圈亮边
@@ -62,8 +62,8 @@ export function createLayers() {
     disc.renderOrder = -10;
     group.add(disc);
     const wallMat = new THREE.ShaderMaterial({ uniforms: { uColor: mat.uniforms.uColor, uDim: mat.uniforms.uDim, uGhost: mat.uniforms.uGhost, uReveal: mat.uniforms.uReveal }, ...wallShader, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(cfg.radius, cfg.radius, 1.8, 128, 1, true), wallMat);
-    wall.position.y = cfg.y - 0.9; wall.renderOrder = -11;
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(cfg.radius, cfg.radius, 1.4, 128, 1, true), wallMat);
+    wall.position.y = cfg.y - 0.7; wall.renderOrder = -11;
     group.add(wall);
 
     const el = document.createElement('div');
@@ -74,7 +74,7 @@ export function createLayers() {
     layers[level] = { disc, mat, label, el, cfg, dimTarget: 1, ghostTarget: 0, dim: 1, ghost: 0 };
   }
   // 中轴光柱：贯穿三层中心，极淡
-  const axisMat = new THREE.SpriteMaterial({ map: beamTexture(), color: 0x6fb6ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false });
+  const axisMat = new THREE.SpriteMaterial({ map: beamTexture(), color: 0x6fb6ff, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
   const axis = new THREE.Sprite(axisMat); axis.scale.set(2.2, 52, 1); axis.position.y = 6; axis.renderOrder = -12;
   group.add(axis);
   let globalDim = 1;
@@ -89,7 +89,7 @@ export function createLayers() {
   group.update = (dt, t, camera) => {
     const az = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
     const k = Math.min(1, dt * 3);
-    axisMat.opacity = 0.16 * globalDim * (layers.core.mat.uniforms.uReveal.value >= 0.999 ? 1 : 0);
+    axisMat.opacity = 0.12 * globalDim * (layers.core.mat.uniforms.uReveal.value >= 0.999 ? 1 : 0);
     for (const l of Object.values(layers)) {
       l.dim += (l.dimTarget - l.dim) * k; l.ghost += (l.ghostTarget - l.ghost) * k;
       l.mat.uniforms.uTime.value = t; l.mat.uniforms.uDim.value = l.dim * globalDim; l.mat.uniforms.uGhost.value = l.ghost;
