@@ -44,7 +44,7 @@ export class BusinessNode {
     this.label.position.set(0, business.labelAbove ? this.radius * 1.5 : 0, business.labelAbove ? 0 : this.radius * 1.05);
     this.group.add(this.label);
 
-    this.hover = 0; this.dim = 1; this.dimTarget = 1; this.hoverTarget = 0; this.culled = false; this.ghost = false;
+    this.hover = 0; this.dim = 1; this.dimTarget = 1; this.hoverTarget = 0; this.culled = false; this.ghost = false; this.reveal = 1; this.revealed = true;
     this.applyStatus();
   }
 
@@ -71,11 +71,16 @@ export class BusinessNode {
   setGhost(on) { if (on === this.ghost) return; this.ghost = on; this._syncLabel(); }
   // 标签碰撞剔除
   setCulled(on) { if (on === this.culled) return; this.culled = on; this._syncLabel(); }
-  _syncLabel() { this.label.visible = !this.hidden && !this.ghost && !this.culled; }
+  _syncLabel() { this.label.visible = !this.hidden && !this.ghost && !this.culled && this.revealed; }
+  // 开场生成：0 = 未出现；播放时从小到大、由暗到亮
+  setReveal(v) { this.reveal = v; const r = v >= 0.85; if (r !== this.revealed) { this.revealed = r; this._syncLabel(); } }
+  playReveal(delay = 0) { this.setReveal(0); this._revealTw?.cancel(); this._revealTw = tween(this, { reveal: 1 }, { duration: 0.9, delay, ease: Ease.outBack, onUpdate: () => this.setReveal(this.reveal) }); }
 
   update(dt, t) {
     const st = this.data.status;
-    const vis = Math.pow(this.dim, 2.2); // 透明度在线性空间混合，按 gamma 映射后压暗才符合视觉预期
+    const rv = Math.max(0, Math.min(1, this.reveal));
+    const vis = Math.pow(this.dim, 2.2) * rv; // 透明度在线性空间混合，按 gamma 映射后压暗才符合视觉预期
+    this.model.group.scale.setScalar(Math.max(0.001, 0.3 + 0.7 * Math.max(0, this.reveal)));
     this.model.update(dt, t, vis, st, this.hover);
     if (this.alertRing.visible) {
       const period = st === 'critical' ? ALARM.critical : ALARM.warning;

@@ -102,14 +102,15 @@ export function initPanels(h) {
       setText(tk.querySelector('.k-note'), `远端 ${fmt(s.remoteTerminals)}${s.terminalDelta === null ? '' : ` · 5 分钟 ${s.terminalDelta >= 0 ? '+' : ''}${fmt(s.terminalDelta)}`}`);
     },
 
-    // 层级切换：当前层高亮，显示业务数与异常数；其它层有故障时给出提示
-    setLayerTabs(byLevel, current, hint) {
-      const rows = [...LEVELS.map((lv) => ({ id: lv, name: LEVEL_NAME[lv] + '层', c: byLevel[lv] })), { id: 'all', name: '全部层级', c: null }];
+    // 重点层级：当前层实、其它层虚化；当前行可「对准」推近 / 「全景」拉回；其它层有故障时给出提示
+    setLayerTabs(byLevel, current, hint, zoomed) {
+      const rows = [...LEVELS.map((lv) => ({ id: lv, name: LEVEL_NAME[lv], c: byLevel[lv] })), { id: 'all', name: '全部', c: null }];
       syncList(layerTabs, rows, {
         hoverFreeze: false,
-        create: (r) => { const el = document.createElement('div'); el.innerHTML = `<span class="bar"></span><span class="nm"></span><span class="cnt"></span><span class="st"></span>`; el.onclick = () => h.onLayer(r.id); el.style.setProperty('--c', `var(--${r.id === 'all' ? 'fg-dim' : r.id})`); return el; },
+        create: (r) => { const el = document.createElement('div'); el.innerHTML = `<span class="bar"></span><span class="nm"></span><span class="cnt"></span><span class="st"></span><span class="zoom" title="推近到该层 / 回到全景"></span>`; el.onclick = () => h.onLayer(r.id); el.querySelector('.zoom').onclick = (e) => { e.stopPropagation(); h.onLayerZoom(r.id); }; el.style.setProperty('--c', `var(--${r.id === 'all' ? 'fg-dim' : r.id})`); return el; },
         update: (el, r) => {
           setClass(el, `ltab ${current === r.id ? 'on' : ''}`);
+          const z = el.querySelector('.zoom'); setText(z, current === r.id && r.id !== 'all' ? (zoomed ? '全景' : '对准') : '');
           setText(el.querySelector('.nm'), r.name); setText(el.querySelector('.cnt'), r.c ? r.c.count : '');
           const st = el.querySelector('.st');
           if (!r.c) { setText(st, ''); setClass(st, 'st'); }
@@ -168,10 +169,10 @@ export function initPanels(h) {
       setText(flowCount, total);
       if (!flows.length) { if (!flowList.querySelector('.flow-empty')) flowList.innerHTML = '<div class="flow-empty">当前层没有数据流转</div>'; return; }
       flowList.querySelector('.flow-empty')?.remove();
-      syncList(flowList, flows, {
+      syncList(flowList, flows.slice(0, 6), {
         create: (f) => { const el = document.createElement('div'); el.innerHTML = `<span class="fn from"></span><span class="fa"></span><span class="fn to"></span><span class="fr"></span><span class="st"></span>`; el.onmouseenter = () => h.onFlowHover(f.id); el.onmouseleave = () => h.onFlowHover(null); el.onclick = () => h.onFlowClick(f.id); return el; },
         update: (el, f) => { setClass(el, `flow ${f.id === pinnedId ? 'pinned' : ''}`); setText(el.querySelector('.from'), f.from); setText(el.querySelector('.fa'), f.dir); setText(el.querySelector('.to'), f.to); setText(el.querySelector('.fr'), `${f.rate}/min`); setClass(el.querySelector('.st'), `st ${f.status}`); el.title = `${f.from} ${f.dir} ${f.to} · ${f.type}`; },
-        tail: total > flows.length ? { cls: 'flow-more', text: `还有 ${total - flows.length} 条正在流转` } : null,
+        tail: total > Math.min(6, flows.length) ? { cls: 'flow-more', text: `还有 ${total - Math.min(6, flows.length)} 条正在流转` } : null,
       });
     },
 
@@ -282,6 +283,7 @@ export function initPanels(h) {
       setText($('quality-note'), `当前：${{ high: '高', balanced: '均衡', low: '低' }[q]}${auto ? '（自动）' : ''}`);
     },
     setToggle(key, on) { const sw = settings.querySelector(`.sw[data-key="${key}"]`); sw?.classList.toggle('on', on); },
+    isOn(key) { return !!settings.querySelector(`.sw[data-key="${key}"]`)?.classList.contains('on'); },
     focusSearch() { searchInput.focus(); searchInput.select(); },
     clearSearch() { searchInput.value = ''; srItems = []; renderSearch(); searchInput.blur(); },
   };
