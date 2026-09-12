@@ -1,3 +1,4 @@
+import { TERMINAL_TYPES } from '../config.js';
 // 模拟数据：业务、组件、连接关系、终端与实时事件
 // 真实接入时，只需用同样结构的数据调用 main.js 暴露的 window.NetView API 即可
 
@@ -14,7 +15,6 @@ const COMP_TEMPLATES = {
 };
 const COMP_LINKS = [['gateway', 'app'], ['app', 'db'], ['app', 'cache'], ['app', 'mq'], ['app', 'storage'], ['sched', 'db'], ['mq', 'app']];
 const LINK_TYPES = ['同步调用', '数据同步', '消息投递', '文件传输', '认证请求'];
-const TERMINAL_TYPES = ['办公 PC', '移动终端', '自助终端', '物联设备', '专用终端'];
 
 let seed = 20240912;
 export function rand() { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; }
@@ -206,3 +206,11 @@ export function startSimulation(data, api) {
 }
 
 export const TERMINAL_TYPES_LIST = TERMINAL_TYPES;
+
+// 由状态推导当前指标（真实接入时用 NetView.setMetrics 覆盖）：告警时延 ×3~6、故障可用性跌破 99、请求量掉四成
+export function deriveMetrics(b) {
+  const m = b.metrics;
+  if (b.status === 'critical') return { availability: (m.availability - 1.2).toFixed(2), latency: Math.round(m.latency * 8), qps: Math.round(m.qps * 0.6) };
+  if (b.status === 'warning') return { availability: (m.availability - 0.25).toFixed(2), latency: Math.round(m.latency * 4), qps: Math.round(m.qps * 0.85) };
+  return { availability: m.availability, latency: m.latency, qps: m.qps };
+}

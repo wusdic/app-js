@@ -39,8 +39,8 @@ export class TerminalCloud {
           vec3 p = aCenter + vec3(cos(ang) * aOrbit.x, aLife.z + sin(uTime * 0.7 + aSeed * 10.0) * 0.25, sin(ang) * aOrbit.x);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          vA = alive * env * (0.35 + 0.45 * aSeed) * aVis;
-          gl_PointSize = (1.6 + aSeed * 1.6) * uPixelRatio * (60.0 / -mv.z) * alive;
+          vA = alive * env * (0.22 + 0.28 * aSeed) * aVis;
+          gl_PointSize = (1.2 + aSeed * 0.8) * uPixelRatio * (60.0 / -mv.z) * alive;
         }`,
       fragmentShader: `
         uniform vec3 uColor; uniform float uDim; varying float vA;
@@ -62,7 +62,7 @@ export class TerminalCloud {
   }
 
   // 每个业务的目标粒子数：与在线终端数成对数关系，避免核心业务粒子淹没画面
-  targetFor(b) { return Math.min(110, Math.round(4 + Math.log2(1 + b.terminals.local) * 7)); }
+  targetFor(b) { return Math.min(40, Math.round(3 + Math.log2(1 + b.terminals.local) * 4)); }
 
   spawn(node) {
     if (!this.free.length) return;
@@ -93,10 +93,13 @@ export class TerminalCloud {
   setDim(d) { this.material.uniforms.uDim.value = d * (this.enabled ? 1 : 0); }
   // 分层查看：只显示当前层业务的终端
   setLayer(level) {
+    if (level === this.layer) return;
     this.layer = level;
-    for (let i = 0; i < CAPACITY; i++) { const owner = this.slotOwner[i]; if (owner) this.vis[i] = level === 'all' || owner.startsWith(level) ? 1 : 0; }
+    for (let i = 0; i < CAPACITY; i++) { const owner = this.slotOwner[i]; if (owner) this.vis[i] = level === 'all' || this.nodes.get(owner)?.data.level === level ? 1 : 0; }
     this.geometry.attributes.aVis.needsUpdate = true;
   }
+  // 数据重载时清空全部粒子
+  clear() { for (let i = 0; i < CAPACITY; i++) if (this.slotOwner[i]) this.release(i); }
   setEnabled(on) { this.enabled = on; this.points.visible = on; }
 
   update(dt, time) {

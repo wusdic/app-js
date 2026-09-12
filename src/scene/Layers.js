@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { LAYOUT, THEME, LEVELS } from '../config.js';
 
-// 分层圆盘：环形刻度网格 + 外圈亮边 + 极慢的雷达扫描，作为三个业务层的“地面”
+// 分层圆盘：3 圈刻度环 + 外半段 12 条辐条 + 外缘边 + 只在当前层运转的雷达扫描；虚化层只保留轮廓与浅底
 const discShader = {
   vertexShader: `varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform vec3 uColor; uniform float uRadius; uniform float uOpacity; uniform float uTime; uniform float uDim;
+    uniform vec3 uColor; uniform float uRadius; uniform float uDim; uniform float uTime; uniform float uGhost; uniform float uScan;
     varying vec3 vPos;
     float lineAt(float d, float w){ return 1.0 - smoothstep(0.0, w, d); }
     void main(){
@@ -14,21 +14,15 @@ const discShader = {
       float r = len / uRadius;
       if (r > 1.0) discard;
       float ang = atan(vPos.y, vPos.x);
-      // 5 圈同心环
-      float fr = fract(r * 5.0);
-      float ringD = min(fr, 1.0 - fr) / 5.0 * uRadius;
-      float rings = lineAt(ringD, 0.09) * 0.55;
-      // 24 条径向线
-      float fa = fract(ang / 6.2831853 * 24.0);
-      float spokeD = min(fa, 1.0 - fa) * (6.2831853 * len / 24.0);
-      float spokes = lineAt(spokeD, 0.07) * 0.3 * smoothstep(0.05, 0.25, r);
-      // 外缘亮边
-      float rim = lineAt((1.0 - r) * uRadius, 0.22) * 1.4 + lineAt((1.0 - r) * uRadius, 1.6) * 0.25;
-      // 基础填充：中心略亮
-      float fill = 0.10 * (1.0 - r * 0.7);
-      // 雷达扫描：极慢、极淡
-      float sweep = pow(fract(ang / 6.2831853 - uTime * 0.03), 12.0) * 0.28 * smoothstep(0.1, 0.5, r);
-      float a = (fill + rings + spokes + rim + sweep) * uOpacity * uDim;
+      float fr = fract(r * 3.0);
+      float rings = lineAt(min(fr, 1.0 - fr) / 3.0 * uRadius, 0.07) * 0.5;
+      float fa = fract(ang / 6.2831853 * 12.0);
+      float spokes = lineAt(min(fa, 1.0 - fa) * (6.2831853 * len / 12.0), 0.06) * 0.3 * smoothstep(0.5, 0.68, r);
+      float rim = lineAt((1.0 - r) * uRadius, 0.22) * 1.0 + lineAt((1.0 - r) * uRadius, 2.4) * 0.14;
+      float fill = 0.13 * (1.0 - r * 0.7);
+      float sweep = pow(fract(ang / 6.2831853 - uTime * 0.0167), 12.0) * 0.26 * smoothstep(0.1, 0.5, r) * uScan;
+      float detail = (rings + spokes + sweep) * (1.0 - uGhost);
+      float a = (fill * mix(1.0, 0.5, uGhost) + detail + rim * mix(1.0, 0.45, uGhost)) * uDim;
       gl_FragColor = vec4(uColor * a, a);
     }`,
 };
@@ -40,7 +34,7 @@ export function createLayers() {
     const cfg = LAYOUT.layers[level];
     const geo = new THREE.CircleGeometry(cfg.radius, 128);
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(THEME.disc[level]) }, uRadius: { value: cfg.radius }, uOpacity: { value: 1 }, uTime: { value: 0 }, uDim: { value: 1 } },
+      uniforms: { uColor: { value: new THREE.Color(THEME.disc[level]) }, uRadius: { value: cfg.radius }, uDim: { value: 1 }, uTime: { value: 0 }, uGhost: { value: 0 }, uScan: { value: 1 } },
       ...discShader, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
     const disc = new THREE.Mesh(geo, mat);
@@ -51,17 +45,29 @@ export function createLayers() {
 
     const el = document.createElement('div');
     el.className = 'lbl layer';
-    el.innerHTML = `${cfg.label}<small>${cfg.en}</small>`;
+    el.innerHTML = `<span class="ln">${cfg.label}</span><small>${cfg.en}</small><b class="n"></b>`;
     const label = new CSS2DObject(el);
-    const a = -Math.PI * 0.72;
-    label.position.set(Math.cos(a) * (cfg.radius + 5), cfg.y + 0.5, Math.sin(a) * (cfg.radius + 5));
     group.add(label);
-    layers[level] = { disc, mat, label, el };
+    layers[level] = { disc, mat, label, el, cfg, dimTarget: 1, ghostTarget: 0, dim: 1, ghost: 0 };
   }
-  group.update = (dt, t) => { for (const l of Object.values(layers)) l.mat.uniforms.uTime.value = t; };
-  group.setDim = (d) => { for (const l of Object.values(layers)) { l.mat.uniforms.uDim.value = d; l.el.classList.toggle('dim', d < 0.5); } };
-  // 分层查看：当前层圆盘完整显示，其它层虚化
-  group.setLayerDims = (level) => { for (const [lv, l] of Object.entries(layers)) { const on = level === 'all' || lv === level; l.mat.uniforms.uDim.value = on ? 1 : 0.16; l.el.classList.toggle('dim', !on); } };
+  let globalDim = 1;
+  // 分层查看：当前层完整，其它层虚化（补间过渡）
+  group.setLayerDims = (level) => { for (const [lv, l] of Object.entries(layers)) { const on = level === 'all' || lv === level; l.dimTarget = on ? 1 : 0.35; l.ghostTarget = on ? 0 : 1; l.mat.uniforms.uScan.value = level === 'all' || on ? 1 : 0; } };
+  group.setDim = (d) => { globalDim = d; };
+  // 层标签上的异常数
+  group.setLayerNote = (level, text, cls) => { const b = layers[level].el.querySelector('.n'); b.textContent = text; b.className = `n ${cls || ''}`; };
+  group.update = (dt, t, camera) => {
+    const az = camera ? Math.atan2(camera.position.x, camera.position.z) : 0;
+    const k = Math.min(1, dt * 3);
+    for (const l of Object.values(layers)) {
+      l.dim += (l.dimTarget - l.dim) * k; l.ghost += (l.ghostTarget - l.ghost) * k;
+      l.mat.uniforms.uTime.value = t; l.mat.uniforms.uDim.value = l.dim * globalDim; l.mat.uniforms.uGhost.value = l.ghost;
+      l.el.classList.toggle('dim', l.ghostTarget > 0.5 || globalDim < 0.5);
+      // 标签始终放在面向相机的前左侧边缘
+      const a = az + 0.55;
+      l.label.position.set(Math.sin(a) * (l.cfg.radius + 5), l.cfg.y + 0.5, Math.cos(a) * (l.cfg.radius + 5));
+    }
+  };
   group.layerMap = layers;
   return group;
 }

@@ -11,40 +11,51 @@
       <canvas id="gl"></canvas>
       <div id="labels"></div>
 
-      <!-- 顶部：标题 + 关键指标 -->
+      <!-- 顶部：标题 / 搜索 / 关键指标 -->
       <header id="header" class="ui">
         <div class="brand">
           <div class="brand-title">全网业务运行态势</div>
           <div class="brand-sub"><span id="clock">--:--:--</span><span class="sep">·</span><span id="date">----</span><span class="sep">·</span><span class="live"><i></i>实时</span></div>
         </div>
+        <div class="search" id="search-box">
+          <input id="search" type="search" placeholder="搜索业务 / 部门 / 负责人　( / )" autocomplete="off" />
+          <div id="search-results" class="search-results hidden"></div>
+        </div>
         <div class="kpis" id="kpis"></div>
       </header>
 
-      <!-- 左侧：图例 / 聚焦信息 -->
+      <div id="banner" class="banner hidden"></div>
+
+      <!-- 左侧：层级 / 关键依赖 / 图例 / 聚焦信息 -->
       <aside id="left" class="ui">
         <section class="panel" id="layers-panel">
           <div class="panel-title">查看层级 <span class="kbd-hint">1 / 2 / 3 / 0</span></div>
           <div id="layer-tabs" class="layer-tabs"></div>
+          <div id="layer-hint" class="layer-hint hidden"></div>
         </section>
-        <section class="panel" id="legend">
-          <div class="panel-title">图例</div>
+        <section class="panel" id="hubs-panel">
+          <div class="panel-title">关键依赖 <span class="kbd-hint">被依赖最多的业务</span></div>
+          <div id="hub-list" class="hub-list"></div>
+        </section>
+        <section class="panel collapsed" id="legend">
+          <div class="panel-title clickable">图例 <span class="kbd-hint">展开 ▾</span></div>
           <div class="legend-grid">
-            <div class="lg-row"><span class="lg-dot core"></span>核心业务<span class="lg-note">上层</span></div>
-            <div class="lg-row"><span class="lg-dot important"></span>重要业务<span class="lg-note">中层</span></div>
-            <div class="lg-row"><span class="lg-dot general"></span>一般业务<span class="lg-note">下层</span></div>
+            <div class="lg-row"><span class="lg-dot core"></span>核心业务<span class="lg-note">二十面体 · 上层</span></div>
+            <div class="lg-row"><span class="lg-dot important"></span>重要业务<span class="lg-note">十二面体 · 中层</span></div>
+            <div class="lg-row"><span class="lg-dot general"></span>一般业务<span class="lg-note">八面体 · 下层</span></div>
             <div class="lg-row"><span class="lg-dot warning"></span>告警<span class="lg-note">性能劣化</span></div>
             <div class="lg-row"><span class="lg-dot critical"></span>故障<span class="lg-note">中断 / 严重</span></div>
             <div class="lg-row"><span class="lg-line"></span>本层连线<span class="lg-note">常亮</span></div>
             <div class="lg-row"><span class="lg-glow"></span>数据流转<span class="lg-note">辉光沿线飞过</span></div>
             <div class="lg-row"><span class="lg-dust"></span>接入终端<span class="lg-note">密度 = 在线数量</span></div>
           </div>
-          <div class="hint">悬停业务 = 只看它的连接 · 点击业务 = 放大局部</div>
+          <div class="hint">悬停业务 = 只看它的连接 · 点击业务 = 放大局部 · Shift+点击 = 固定聚光</div>
         </section>
         <section class="panel hidden" id="focus-panel"></section>
         <section class="panel hidden" id="comp-panel"></section>
       </aside>
 
-      <!-- 右侧：异常告警 -->
+      <!-- 右侧：异常关注 / 实时数据流转 -->
       <aside id="right" class="ui">
         <section class="panel" id="alerts">
           <div class="panel-title">异常关注 <span class="badge" id="alert-count">0</span></div>
@@ -56,20 +67,30 @@
         </section>
       </aside>
 
-      <!-- 底部：控制 -->
+      <!-- 底部：面包屑 / 事件流水 / 控制 -->
       <nav id="controls" class="ui">
-        <div class="crumb" id="crumb"><span>全网总览</span></div>
+        <div class="crumb-wrap">
+          <div class="crumb" id="crumb"></div>
+          <div class="spot-chip hidden" id="spot-chip"></div>
+        </div>
+        <div class="ticker" id="ticker"></div>
         <div class="btns">
           <button id="btn-back" class="btn primary hidden">← 返回全网</button>
           <button id="btn-reset" class="btn">重置视角</button>
-          <button id="btn-rotate" class="btn toggle on">自动旋转</button>
-          <button id="btn-terminals" class="btn toggle on">终端显示</button>
-          <button id="btn-bloom" class="btn toggle on">辉光</button>
+          <button id="btn-settings" class="btn" title="显示设置">⚙</button>
+          <div id="settings" class="settings hidden">
+            <div class="s-row"><span>自动旋转</span><button class="sw on" data-key="rotate"></button></div>
+            <div class="s-row"><span>值守巡视</span><button class="sw on" data-key="patrol"></button></div>
+            <div class="s-row"><span>终端显示</span><button class="sw on" data-key="terminals"></button></div>
+            <div class="s-row"><span>辉光</span><button class="sw on" data-key="bloom"></button></div>
+            <div class="s-row"><span>画质</span><span class="seg" id="quality-seg"><button data-q="auto" class="on">自动</button><button data-q="high">高</button><button data-q="balanced">均衡</button><button data-q="low">低</button></span></div>
+            <div class="s-note" id="quality-note">当前：高</div>
+          </div>
         </div>
       </nav>
 
       <div id="tooltip" class="tooltip hidden"></div>
-      <div id="corner-tl" class="corner"></div>
+      <div id="gl-lost" class="overlay hidden"><div>画面重新连接中…</div></div>
     </div>
     <script type="module" src="./src/main.js"></script>
   </body>
