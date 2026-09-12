@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>全网业务运行态势</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="gl"></canvas>
+      <div id="labels"></div>
+
+      <!-- 顶部：标题 + 关键指标 -->
+      <header id="header" class="ui">
+        <div class="brand">
+          <div class="brand-title">全网业务运行态势</div>
+          <div class="brand-sub"><span id="clock">--:--:--</span><span class="sep">·</span><span id="date">----</span><span class="sep">·</span><span class="live"><i></i>实时</span></div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+      </header>
+
+      <!-- 左侧：图例 / 聚焦信息 -->
+      <aside id="left" class="ui">
+        <section class="panel" id="legend">
+          <div class="panel-title">图例</div>
+          <div class="legend-grid">
+            <div class="lg-row"><span class="lg-dot core"></span>核心业务<span class="lg-note">上层</span></div>
+            <div class="lg-row"><span class="lg-dot important"></span>重要业务<span class="lg-note">中层</span></div>
+            <div class="lg-row"><span class="lg-dot general"></span>一般业务<span class="lg-note">下层</span></div>
+            <div class="lg-row"><span class="lg-dot warning"></span>告警<span class="lg-note">性能劣化</span></div>
+            <div class="lg-row"><span class="lg-dot critical"></span>故障<span class="lg-note">中断 / 严重</span></div>
+            <div class="lg-row"><span class="lg-line"></span>业务连接<span class="lg-note">流光 = 有数据往来</span></div>
+            <div class="lg-row"><span class="lg-dust"></span>接入终端<span class="lg-note">密度 = 在线数量</span></div>
+          </div>
+          <div class="hint">拖拽旋转 · 滚轮缩放 · 点击业务查看局部关系</div>
+        </section>
+        <section class="panel hidden" id="focus-panel"></section>
+      </aside>
+
+      <!-- 右侧：异常告警 -->
+      <aside id="right" class="ui">
+        <section class="panel" id="alerts">
+          <div class="panel-title">异常关注 <span class="badge" id="alert-count">0</span></div>
+          <div id="alert-list" class="alert-list"></div>
+        </section>
+      </aside>
+
+      <!-- 底部：控制 -->
+      <nav id="controls" class="ui">
+        <div class="crumb" id="crumb"><span>全网总览</span></div>
+        <div class="btns">
+          <button id="btn-back" class="btn primary hidden">← 返回全网</button>
+          <button id="btn-reset" class="btn">重置视角</button>
+          <button id="btn-rotate" class="btn toggle on">自动旋转</button>
+          <button id="btn-terminals" class="btn toggle on">终端显示</button>
+          <button id="btn-bloom" class="btn toggle on">辉光</button>
+        </div>
+      </nav>
+
+      <div id="tooltip" class="tooltip hidden"></div>
+      <div id="corner-tl" class="corner"></div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
