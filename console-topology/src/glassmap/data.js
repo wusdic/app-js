@@ -1,4 +1,4 @@
-// 模拟数据：按业务区域组织的业务、区域内外的连接，以及实时事件模拟器
+// 模拟数据：按业务区域组织的业务、区域内外的连接（含 1:1 与 N:N），以及实时事件模拟器
 // 区域（zone）是管理前台的分组单位：核心平台、门户与指挥、综合办公、人财物、园区安防、公共服务
 export const LEVELS = ['core', 'important', 'general'];
 export const LEVEL_NAME = { core: '核心', important: '重要', general: '一般' };

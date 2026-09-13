@@ -1,4 +1,5 @@
-// 业务类型图标：16 × 16 线性图标，stroke = currentColor
+// 业务类型图标 → 画布贴图（白色线稿，由材质颜色着色）
+import * as THREE from 'three';
 const P = {
   gateway: '<rect x="2.5" y="4" width="11" height="8" rx="2"/><path d="M5.5 8h5M8 6v4"/>',
   bus: '<path d="M2.5 8h11M5 5l-2.5 3L5 11M11 5l2.5 3L11 11"/>',
@@ -29,4 +30,15 @@ const P = {
   book: '<path d="M3 3h4.5a1.5 1.5 0 0 1 1.5 1.5V13a1.5 1.5 0 0 0-1.5-1.5H3zM13 3H8.5A1.5 1.5 0 0 0 7 4.5V13a1.5 1.5 0 0 1 1.5-1.5H13z"/>',
   search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>',
 };
-export const icon = (kind) => `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${P[kind] || P.doc}</svg>`;
+export const iconSvg = (kind, color = 'currentColor') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${P[kind] || P.doc}</svg>`;
+const cache = new Map();
+export function iconTexture(kind) {
+  const key = P[kind] ? kind : 'doc';
+  if (cache.has(key)) return cache.get(key);
+  const size = 128, c = document.createElement('canvas'); c.width = c.height = size;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const img = new Image();
+  img.onload = () => { const ctx = c.getContext('2d'); ctx.clearRect(0, 0, size, size); ctx.drawImage(img, 8, 8, size - 16, size - 16); tex.needsUpdate = true; };
+  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(iconSvg(key, '#ffffff'));
+  cache.set(key, tex); return tex;
+}
