@@ -1,17 +1,17 @@
-// 「全网业务版图」主视觉模块：斜向立体（等轴测）园区式拓扑
-//   六块磨砂玻璃「业务区域」平台错落在柔和渐变的地面上，每个区域承载所属业务的 3D 方块；
+// 「全网业务版图」主视觉模块：正向俯视的立体园区式拓扑
+//   六块磨砂玻璃「业务区域」平台按 3 × 2 正向排列在柔和渐变的地面上，每个区域承载所属业务的磨砂玻璃方块；
 //   区域内外用正交路线相连，有数据往来时蓝色数据包沿路线飞行；异常业务变色并浮出角标与涟漪。
 //   实现：CSS 3D（真实的 backdrop-filter 磨砂）+ SVG 路线 + 少量 JS（布局、数据包、交互）
 import { LEVEL_NAME, STATUS_NAME } from './data.js';
 import { icon } from './icons.js';
 import './scene.css';
 
-const GW = 1020, GH = 680;               // 地面尺寸（地面坐标，px）
-const TILE = 300, GAP = 40, PAD = 20;    // 区域平台尺寸与间距
+const GW = 1020, GH = 760;               // 地面尺寸（地面坐标，px）
+const TILE = 300, TILE_D = 340, GAP = 40, PAD = 20;  // 区域平台宽 / 深与间距（深度方向多出的一段放区域名牌）
 const SLAB = 16;                         // 平台厚度
 const CELL = 84, BLK = 48;               // 业务方块网格与底面尺寸
 const BLK_H = { core: 30, important: 24, general: 18 };
-const TILT = 58, SPIN = -45;             // 等轴测角度
+const TILT = 56;                         // 俯视倾角（正向，不旋转）
 const ZONE_SLOTS = { office: [0, 0], portal: [1, 0], hr: [2, 0], campus: [0, 1], core: [1, 1], service: [2, 1] };
 const fmt = (n) => Number(n).toLocaleString('zh-CN');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,23 +48,23 @@ export function createBusinessMap(container, { data, intro = true, labels = true
   const zones = new Map(), blocks = new Map();
   data.zones.forEach((z, zi) => {
     const [cx, cy] = ZONE_SLOTS[z.id] || [zi % 3, Math.floor(zi / 3)];
-    const x = PAD + cx * (TILE + GAP), y = PAD + cy * (TILE + GAP);
+    const x = PAD + cx * (TILE + GAP), y = PAD + cy * (TILE_D + GAP);
     const zone = el('div', `bm-zone ${z.accent} z-${z.id}`);
     zone.style.left = `${x}px`; zone.style.top = `${y}px`; zone.style.setProperty('--i', zi);
-    zone.innerHTML = `<i class="z-shadow"></i><i class="z-left"></i><i class="z-right"></i><div class="z-top"></div>
+    zone.innerHTML = `<i class="z-shadow"></i><i class="z-side z-left"></i><i class="z-side z-right"></i><i class="z-side z-front"></i><div class="z-top"></div>
       <div class="z-head"><b>${esc(z.name)}</b><small>${esc(z.en)}</small><span class="z-count">${z.businesses.length} 个业务</span><span class="z-bad"></span></div>`;
     zone.dataset.zone = z.id;
     world.appendChild(zone);
     const rec = { z, x, y, el: zone, bad: zone.querySelector('.z-bad') };
     zones.set(z.id, rec);
     const n = z.businesses.length, cols = 3, rows = Math.ceil(n / cols);
-    const x0 = (TILE - cols * CELL) / 2 + (CELL - BLK) / 2, y0 = (TILE - rows * CELL) / 2 + (CELL - BLK) / 2;
+    const x0 = (TILE - cols * CELL) / 2 + (CELL - BLK) / 2, y0 = 12 + Math.max(0, (270 - rows * CELL) / 2) + (CELL - BLK) / 2; // 前缘留给区域名牌
     z.businesses.forEach((bid, i) => {
       const b = data.businesses.find((q) => q.id === bid);
       const bx = x0 + (i % cols) * CELL, by = y0 + Math.floor(i / cols) * CELL, h = BLK_H[b.level];
       const blk = el('div', `bm-blk ${b.level} ${b.status}`);
       blk.style.left = `${bx}px`; blk.style.top = `${by}px`; blk.style.setProperty('--h', `${h}px`); blk.style.setProperty('--i', zi * 8 + i);
-      blk.innerHTML = `<i class="b-shadow"></i><i class="b-left"></i><i class="b-right"></i><div class="b-top">${icon(b.kind)}<i class="led"></i></div>
+      blk.innerHTML = `<i class="b-shadow"></i><i class="b-side b-left"></i><i class="b-side b-right"></i><i class="b-side b-front"></i><div class="b-top">${icon(b.kind)}<i class="led"></i></div>
         <div class="b-label">${esc(b.name)}</div><div class="b-badge"><i class="ring"></i><span></span></div>`;
       blk.dataset.id = b.id;
       zone.appendChild(blk);
@@ -118,16 +118,17 @@ export function createBusinessMap(container, { data, intro = true, labels = true
         const L = p.t * r.len, q = r.line.getPointAtLength(L), q2 = r.line.getPointAtLength(Math.min(r.len, Math.max(0, L + p.dir * 4)));
         const ang = Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / Math.PI;
         p.el.setAttribute('transform', `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+        p.el.setAttribute('opacity', Math.min(1, p.t / 0.1, (1 - p.t) / 0.1).toFixed(2)); // 两端淡入淡出
       }
     }
   }
 
   // ---------- 尺寸自适应：把地面菱形缩放到舞台内 ----------
-  const diamondW = (GW + GH) * Math.SQRT1_2, diamondH = diamondW * Math.cos(TILT * Math.PI / 180) + 70;
+  const sceneW = GW + 40, sceneH = GH * Math.cos(TILT * Math.PI / 180) + 96;
   let scale = 1;
   function fitStage() {
     const r = stage.getBoundingClientRect(); if (!r.width) return;
-    scale = Math.min((r.width - 24) / diamondW, (r.height - 36) / diamondH);
+    scale = Math.min((r.width - 24) / sceneW, (r.height - 74) / sceneH); // 底部留出状态片的位置
     fit.style.setProperty('--k', scale.toFixed(4));
   }
   const ro = new ResizeObserver(fitStage); ro.observe(stage); fitStage();
@@ -221,7 +222,7 @@ export function createBusinessMap(container, { data, intro = true, labels = true
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     // 视差：只在指针移动引起变化时才改写 transform，静止时不重绘玻璃层（避免闪烁）
     const nx = px + (tx - px) * Math.min(1, dt * 3), ny = py + (ty - py) * Math.min(1, dt * 3);
-    if (Math.abs(nx - px) > 0.0005 || Math.abs(ny - py) > 0.0005) { px = nx; py = ny; world.style.transform = `translate(-50%, -50%) rotateX(${(TILT + py * 1.4).toFixed(2)}deg) rotateZ(${(SPIN + px * 1.8).toFixed(2)}deg)`; }
+    if (Math.abs(nx - px) > 0.0005 || Math.abs(ny - py) > 0.0005) { px = nx; py = ny; world.style.transform = `translate(-50%, -50%) rotateX(${(TILT + py * 1.4).toFixed(2)}deg) rotateY(${(px * 2).toFixed(2)}deg)`; }
     stepPackets(dt);
     if (!tip.hidden && hover) place(tip, hover, 12);
     if (!card.hidden && pinned) place(card, pinned, 16);
@@ -247,7 +248,7 @@ export function createBusinessMap(container, { data, intro = true, labels = true
     data, zones, blocks, routes,
     touch: (linkId, dir = 1) => { const r = routes.get(linkId); if (r) spawnPacket(r, dir); },
     setLinkActive: (linkId, on) => { const r = routes.get(linkId); if (!r) return; r.active = on; r.line.classList.toggle('on', on); r.road.classList.toggle('on', on); },
-    setBusinessStatus: (id, status) => { const blk = blocks.get(id); if (!blk) return; blk.el.classList.remove(blk.b.status); blk.b.status = status; blk.el.classList.add(status); blk.badge.textContent = status === 'critical' ? '故障' : status === 'warning' ? '告警' : ''; if (pinned === id) { card.innerHTML = cardHtml(blk); card.querySelector('.bm-card-close').addEventListener('click', () => pin(null)); } refreshStats(); applySpot(); },
+    setBusinessStatus: (id, status) => { const blk = blocks.get(id); if (!blk) return; blk.el.classList.remove(blk.b.status); blk.b.status = status; blk.el.classList.add(status); blk.label.textContent = status === 'critical' ? `故障 · ${blk.b.name}` : status === 'warning' ? `告警 · ${blk.b.name}` : blk.b.name; if (pinned === id) { card.innerHTML = cardHtml(blk); card.querySelector('.bm-card-close').addEventListener('click', () => pin(null)); } refreshStats(); applySpot(); },
     setLinkStatus: (linkId, status) => { const r = routes.get(linkId); if (!r) return; r.line.classList.remove(r.l.status); r.l.status = status; r.line.classList.add(status); },
     addTransientLink: (from, to, ttl = 9, dir = 1) => { const id = `t${Date.now().toString(36)}${Math.floor(Math.random() * 1e3)}`; const r = addRoute({ id, from, to, dir, status: 'normal', transient: true, ttl }); if (r) { api.setLinkActive(id, true); setTimeout(() => api.touch(id, 1), 500); } return id; },
     setTerminals: (id, count) => { const blk = blocks.get(id); if (blk) blk.b.terminals = count; },
