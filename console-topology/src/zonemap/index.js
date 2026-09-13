@@ -219,8 +219,9 @@ export function createBusinessMap(container, { data, intro = true, labels = true
   const frame = (now) => {
     if (!alive) return;
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    px += (tx - px) * Math.min(1, dt * 4); py += (ty - py) * Math.min(1, dt * 4);
-    world.style.transform = `translate(-50%, -50%) rotateX(${(TILT + py * 2.2).toFixed(2)}deg) rotateZ(${(SPIN + px * 2.6).toFixed(2)}deg)`;
+    // 视差：只在指针移动引起变化时才改写 transform，静止时不重绘玻璃层（避免闪烁）
+    const nx = px + (tx - px) * Math.min(1, dt * 3), ny = py + (ty - py) * Math.min(1, dt * 3);
+    if (Math.abs(nx - px) > 0.0005 || Math.abs(ny - py) > 0.0005) { px = nx; py = ny; world.style.transform = `translate(-50%, -50%) rotateX(${(TILT + py * 1.4).toFixed(2)}deg) rotateZ(${(SPIN + px * 1.8).toFixed(2)}deg)`; }
     stepPackets(dt);
     if (!tip.hidden && hover) place(tip, hover, 12);
     if (!card.hidden && pinned) place(card, pinned, 16);
