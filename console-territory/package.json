@@ -1,0 +1,9 @@
+{
+  "name": "console-territory-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "管理前台全局展示页的主视觉模块：浅色等轴测业务版图（多业务区域，独立于大屏版本）",
+  "type": "module",
+  "scripts": { "dev": "vite --host", "build": "vite build", "preview": "vite preview --host" },
+  "devDependencies": { "vite": "^7.1.0" }
+}
