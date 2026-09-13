@@ -2,7 +2,9 @@
 .ct-module {
   --ct-ink: #15213b; --ct-muted: #6a7890; --ct-line: #e3e9f4; --ct-accent: #2457f5;
   --ct-warn: #e8950a; --ct-crit: #e5484d; --ct-ok: #1f9d6a;
-  --ct-surface: #ffffff; --ct-ground: radial-gradient(120% 90% at 50% 30%, #f9fbff 0%, #f1f5fc 55%, #eaf0fa 100%);
+  --ct-surface: #ffffff;
+  /* 网格渐变：浅天蓝 / 淡紫 / 薄荷三个柔光斑，给悬浮版图一个有空气感的背景 */
+  --ct-ground: radial-gradient(60% 55% at 18% 22%, rgba(214, 228, 255, 0.85) 0%, rgba(214, 228, 255, 0) 70%), radial-gradient(55% 60% at 84% 18%, rgba(232, 222, 255, 0.8) 0%, rgba(232, 222, 255, 0) 70%), radial-gradient(70% 60% at 60% 100%, rgba(214, 244, 236, 0.9) 0%, rgba(214, 244, 236, 0) 72%), linear-gradient(180deg, #fbfcff 0%, #f3f6fc 100%);
   position: relative; display: flex; flex-direction: column;
   min-height: 460px; height: clamp(460px, 58vw, 640px);
   background: var(--ct-surface); border: 1px solid var(--ct-line); border-radius: 14px;
@@ -29,14 +31,16 @@
 .ct-icon:hover { color: var(--ct-ink); border-color: #cbd5e6; }
 .ct-icon.on { color: var(--ct-accent); border-color: rgba(36, 87, 245, 0.35); background: rgba(36, 87, 245, 0.06); }
 .ct-body { position: relative; flex: 1; min-height: 0; background: var(--ct-ground); border-top: 1px solid var(--ct-line); }
+.ct-body::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(60, 84, 140, 0.13) 0.8px, transparent 0.9px); background-size: 18px 18px; mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 100%); -webkit-mask-image: radial-gradient(70% 70% at 50% 50%, #000 30%, transparent 100%); opacity: 0.6; }
+.ct-canvas { z-index: 1; }
 .ct-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; outline: none; }
 .ct-canvas:focus-visible { box-shadow: inset 0 0 0 2px rgba(36, 87, 245, 0.35); }
 .ct-stats { position: absolute; left: 16px; bottom: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
-.ct-stat { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.78); border: 1px solid rgba(21, 33, 59, 0.07); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size: 11.5px; color: var(--ct-muted); }
+.ct-stat { display: inline-flex; align-items: baseline; gap: 6px; padding: 7px 12px; border-radius: 12px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.55)); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 8px 24px -12px rgba(21, 33, 59, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4); font-size: 11.5px; color: var(--ct-muted); }
 .ct-stat b { font-size: 15px; font-weight: 700; color: var(--ct-ink); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .ct-stat.warn b { color: var(--ct-warn); } .ct-stat.crit b { color: var(--ct-crit); }
 .ct-hint { position: absolute; right: 16px; bottom: 16px; font-size: 11px; color: var(--ct-muted); opacity: 0.8; pointer-events: none; letter-spacing: 0.04em; }
-.ct-tip, .ct-card { position: absolute; left: 0; top: 0; z-index: 2; background: rgba(255, 255, 255, 0.86); border: 1px solid rgba(21, 33, 59, 0.08); border-radius: 12px; box-shadow: 0 14px 36px -14px rgba(21, 33, 59, 0.28), 0 2px 6px rgba(21, 33, 59, 0.05); backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3); will-change: transform; }
+.ct-tip, .ct-card { position: absolute; left: 0; top: 0; z-index: 2; background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72)); border: 1px solid rgba(255, 255, 255, 0.95); border-radius: 14px; box-shadow: 0 18px 44px -16px rgba(21, 33, 59, 0.32), 0 2px 6px rgba(21, 33, 59, 0.05), inset 0 1px 0 rgba(255, 255, 255, 1); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); will-change: transform; }
 .ct-tip { padding: 9px 12px; pointer-events: none; white-space: nowrap; animation: ct-in .16s ease-out; }
 .ct-card { width: 272px; padding: 14px 16px 12px; animation: ct-in .22s cubic-bezier(.2,.8,.2,1); }
 @keyframes ct-in { from { opacity: 0; scale: 0.96; } to { opacity: 1; scale: 1; } }

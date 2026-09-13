@@ -28,7 +28,7 @@ export function createTopologyModule(container, { data, layer = 'all', autoRotat
     <div class="ct-body">
       <canvas class="ct-canvas" aria-label="全网业务拓扑"></canvas>
       <div class="ct-stats"></div>
-      <div class="ct-hint">拖动旋转 · 悬停查看 · 点击锁定</div>
+      <div class="ct-hint">拖动旋转版图 · 悬停查看 · 点击锁定</div>
       <div class="ct-tip" hidden></div>
       <div class="ct-card" hidden></div>
     </div>`;
