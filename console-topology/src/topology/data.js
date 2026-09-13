@@ -22,7 +22,7 @@ export function generateData() {
   const links = []; const seen = new Set(); let n = 0;
   const add = (a, b, dir = 1, extra = {}) => {
     if (a === b) return; const key = a < b ? `${a}|${b}` : `${b}|${a}`; if (seen.has(key)) return; seen.add(key);
-    links.push({ id: `l${++n}`, from: a, to: b, dir, status: 'normal', duty: { on: rand(5, 14), off: rand(3, 10) }, ...extra });
+    links.push({ id: `l${++n}`, from: a, to: b, dir, status: 'normal', duty: { on: rand(4, 9), off: rand(10, 24) }, ...extra });
   };
   const cores = byLevel('core'), imps = byLevel('important'), gens = byLevel('general');
   // 核心之间：1:1 与总线星型
@@ -38,7 +38,7 @@ export function generateData() {
 // 实时模拟：连接按占空比通断、放出数据流；随机业务异常与恢复；临时连接；终端波动
 export function startSimulation(api, data) {
   const links = data.links, biz = data.businesses;
-  const state = new Map(links.map((l) => [l.id, { on: Math.random() < 0.45, until: rand(1, 8), next: rand(0.2, 1.5) }]));
+  const state = new Map(links.map((l) => [l.id, { on: Math.random() < 0.25, until: rand(1, 12), next: rand(0.2, 1.5) }]));
   for (const [id, s] of state) api.setLinkActive(id, s.on);
   const incidents = new Map(); // bizId → until
   let t = 0, last = performance.now(), nextIncident = 6, nextTransient = 9, nextDrift = 2;

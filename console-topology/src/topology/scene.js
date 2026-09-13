@@ -42,6 +42,7 @@ export class Scene {
     this.reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.intro = -1; this.platRev = { core: 1, important: 1, general: 1 };
     this.ripples = []; this.flowsOn = true;
+    this.flowStyle = 'dash'; // 'dash'：整条渐变线 + 顺向流动的虚线 + 收发端点标记（浅色界面默认）；'comet'：彗星光点
     this.font = '500 12px Manrope, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
     this.fontSmall = '600 10.5px Manrope, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
   }
@@ -70,7 +71,7 @@ export class Scene {
   addNode(b, x, z) {
     const lv = b.level, ph = hash(b.id) * Math.PI * 2;
     const rgb = hexRgb(COLORS.level[lv]);
-    const n = { id: b.id, b, level: lv, x, z, y: LAYERS[lv].y, fl: FLOAT[lv], r: NODE_R[lv], phase: ph, reveal: 1, hoverK: 0, layerA: 1, col: rgb.slice(), colT: rgb, top: { sx: 0, sy: 0, d: 0 }, base: { sx: 0, sy: 0, d: 0 }, terminals: [], nextRipple: 0, labelOn: lv === 'core' };
+    const n = { id: b.id, b, level: lv, x, z, y: LAYERS[lv].y, fl: FLOAT[lv], r: NODE_R[lv], phase: ph, reveal: 1, hoverK: 0, layerA: 1, col: rgb.slice(), colT: rgb, top: { sx: 0, sy: 0, d: 0 }, base: { sx: 0, sy: 0, d: 0 }, terminals: [], nextRipple: 0, labelOn: lv === 'core', tx: 0, rx: 0 };
     this.retarget(n);
     n.termN = 0; this.setTerminalCount(n, b.terminals);
     this.nodes.push(n); this.nodeById.set(b.id, n);
@@ -93,16 +94,19 @@ export class Scene {
     const M = [(A[0] + B[0]) / 2, Math.max(A[1], B[1]) + lift, (A[2] + B[2]) / 2];
     const pts3 = [];
     for (let i = 0; i < SAMPLES; i++) { const t = i / (SAMPLES - 1), u = 1 - t; pts3.push([u * u * A[0] + 2 * u * t * M[0] + t * t * B[0], u * u * A[1] + 2 * u * t * M[1] + t * t * B[1], u * u * A[2] + 2 * u * t * M[2] + t * t * B[2]]); }
-    const rec = { id: l.id, l, a, b, cross, pts3, pts2: pts3.map(() => ({ sx: 0, sy: 0, d: 0 })), len3: dist * 1.12, lenPx: 1, active: false, activeK: 0, pulses: [], alpha: 0, transient: !!l.transient, born: this.time, dieAt: l.transient ? this.time + (l.ttl || 10) : Infinity, dying: false };
+    const rec = { id: l.id, l, a, b, cross, pts3, pts2: pts3.map(() => ({ sx: 0, sy: 0, d: 0 })), len3: dist * 1.12, lenPx: 1, active: false, activeK: 0, pulses: [], packets: [], alpha: 0, transient: !!l.transient, born: this.time, dieAt: l.transient ? this.time + (l.ttl || 10) : Infinity, dying: false };
     this.links.push(rec); this.linkById.set(l.id, rec);
     return rec;
   }
   removeLink(id) { const rec = this.linkById.get(id); if (!rec) return; this.linkById.delete(id); this.links.splice(this.links.indexOf(rec), 1); }
   linksOf(id) { return this.links.filter((l) => l.a.id === id || l.b.id === id); }
+  // 一次数据往来：发送端泛起一圈，按线长延时后接收端亮起；彗星模式下另放出一道光点
   pulse(id, dir = 1) {
     const rec = this.linkById.get(id); if (!rec || !this.flowsOn) return;
-    if (rec.pulses.length >= 3) return;
-    rec.pulses.push({ t: dir > 0 ? 0 : 1, dir, spd: 4.6 / rec.len3 });
+    const src = dir > 0 ? rec.a : rec.b;
+    src.tx = 1;
+    rec.packets.push({ at: this.time + rec.len3 / 4.6, dir });
+    if (this.flowStyle === 'comet' && rec.pulses.length < 3) rec.pulses.push({ t: dir > 0 ? 0 : 1, dir, spd: 4.6 / rec.len3 });
   }
   setActive(id, on) { const rec = this.linkById.get(id); if (rec) rec.active = on; }
   spotlightFor(nodeId) {
@@ -176,6 +180,7 @@ export class Scene {
       const hv = (this.hover === n.id || this.pinned === n.id) ? 1 : spot && spot.nodes.has(n.id) ? 0.35 : 0;
       n.hoverK = lerp(n.hoverK, hv, 1 - Math.exp(-dt * 9));
       for (let i = 0; i < 3; i++) n.col[i] = lerp(n.col[i], n.colT[i], 1 - Math.exp(-dt * 5));
+      n.tx = Math.max(0, n.tx - dt / 0.9); n.rx = Math.max(0, n.rx - dt / 1.1);
       const bob = Math.sin(this.time * 0.9 + n.phase) * 0.05;
       this.project(n.x, n.y + n.fl + bob, n.z, n.top); this.project(n.x, n.y, n.z, n.base);
       for (const t of n.terminals) { t.ang += t.spd * dt; t.life = Math.min(1, t.life + dt * 0.8); }
@@ -188,6 +193,7 @@ export class Scene {
       let len = 0; for (let i = 1; i < SAMPLES; i++) len += Math.hypot(l.pts2[i].sx - l.pts2[i - 1].sx, l.pts2[i].sy - l.pts2[i - 1].sy); l.lenPx = Math.max(1, len);
       l.activeK = lerp(l.activeK, l.active ? 1 : 0, 1 - Math.exp(-dt * 3));
       for (let i = l.pulses.length - 1; i >= 0; i--) { const p = l.pulses[i]; p.t += p.dir * p.spd * dt; if (p.t > 1.35 || p.t < -0.35) l.pulses.splice(i, 1); }
+      for (let i = l.packets.length - 1; i >= 0; i--) { const pk = l.packets[i]; if (this.time >= pk.at) { (pk.dir > 0 ? l.b : l.a).rx = 1; l.packets.splice(i, 1); } }
       const inA = this.layer === 'all' || l.a.level === this.layer, inB = this.layer === 'all' || l.b.level === this.layer;
       let target = inA && inB ? 1 : inA || inB ? 0.55 : 0.2;
       if (spot) target *= spot.links.has(l.id) ? 1 : 0.18;
@@ -285,37 +291,54 @@ export class Scene {
 
   drawLink(l) {
     const ctx = this.ctx; if (l.alpha < 0.02) return;
-    const st = l.l.status;
-    const rgb = st === 'critical' ? hexRgb(COLORS.status.critical) : st === 'warning' ? hexRgb(COLORS.status.warning) : l.activeK > 0.02 ? COLORS.linkActive : COLORS.link;
+    const st = l.l.status, dash = this.flowStyle === 'dash';
     const spotOn = this.spot && this.spot.links.has(l.id);
-    let a = (st !== 'normal' ? 0.8 : 0.22 + 0.24 * l.activeK) * l.alpha;
-    if (st === 'critical') a *= 0.7 + 0.3 * Math.sin(this.time * 2.0);
-    if (spotOn) a = Math.max(a, 0.75 * l.alpha);
-    const w = (st !== 'normal' ? 1.6 : 1 + 0.35 * l.activeK) + (spotOn ? 0.4 : 0);
-    const inset = clamp((this.nodeR(l.a) + 3) / l.lenPx, 0, 0.3), insetB = clamp((this.nodeR(l.b) + 3) / l.lenPx, 0, 0.3);
-    ctx.strokeStyle = rgba(rgb, a); ctx.lineWidth = w;
+    const inset = clamp((this.nodeR(l.a) + 4) / l.lenPx, 0, 0.3), insetB = clamp((this.nodeR(l.b) + 4) / l.lenPx, 0, 0.3);
+    const p0 = this.pointAt(l, inset), p1 = this.pointAt(l, 1 - insetB);
+    const path = () => { ctx.beginPath(); ctx.moveTo(p0.sx, p0.sy); for (let i = 1; i < SAMPLES - 1; i++) { const t = i / (SAMPLES - 1); if (t <= inset || t >= 1 - insetB) continue; ctx.lineTo(l.pts2[i].sx, l.pts2[i].sy); } ctx.lineTo(p1.sx, p1.sy); };
+    const abnormalRgb = st === 'critical' ? hexRgb(COLORS.status.critical) : st === 'warning' ? hexRgb(COLORS.status.warning) : null;
+    const k = l.activeK;
+    // 底线：有连接即有一条极淡的实线；异常连接用状态色并慢速呼吸
+    let baseA = (abnormalRgb ? 0.75 : dash ? 0.14 + 0.1 * k : 0.22 + 0.24 * k) * l.alpha;
+    if (st === 'critical') baseA *= 0.7 + 0.3 * Math.sin(this.time * 2.0);
+    if (spotOn) baseA = Math.max(baseA, 0.6 * l.alpha);
+    ctx.strokeStyle = rgba(abnormalRgb || (k > 0.02 && !dash ? COLORS.linkActive : COLORS.link), baseA);
+    ctx.lineWidth = abnormalRgb ? 1.6 : (dash ? 1 : 1 + 0.35 * k) + (spotOn ? 0.4 : 0);
     if (l.transient) ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    const p0 = this.pointAt(l, inset); ctx.moveTo(p0.sx, p0.sy);
-    for (let i = 1; i < SAMPLES - 1; i++) { const t = i / (SAMPLES - 1); if (t <= inset || t >= 1 - insetB) continue; ctx.lineTo(l.pts2[i].sx, l.pts2[i].sy); }
-    const p1 = this.pointAt(l, 1 - insetB); ctx.lineTo(p1.sx, p1.sy);
-    ctx.stroke(); ctx.setLineDash([]);
-    // 方向箭头：有流量时显示
-    if (l.activeK > 0.05) {
+    path(); ctx.stroke(); ctx.setLineDash([]);
+    if (k < 0.04 || abnormalRgb) return;
+    if (!dash) { // 彗星模式：只在两端画方向箭头
       const dirs = l.l.dir === 2 ? [1, -1] : [1];
-      for (const d of dirs) {
-        const t = d > 0 ? 1 - insetB - 0.04 : inset + 0.04;
-        const p = this.pointAt(l, t), q = this.pointAt(l, t + 0.03 * d);
-        const an = Math.atan2(q.sy - p.sy, q.sx - p.sx), sz = 4.5;
-        ctx.fillStyle = rgba(rgb, a * l.activeK * 1.2);
-        ctx.beginPath(); ctx.moveTo(p.sx + Math.cos(an) * sz, p.sy + Math.sin(an) * sz);
-        ctx.lineTo(p.sx + Math.cos(an + 2.5) * sz, p.sy + Math.sin(an + 2.5) * sz); ctx.lineTo(p.sx + Math.cos(an - 2.5) * sz, p.sy + Math.sin(an - 2.5) * sz); ctx.closePath(); ctx.fill();
-      }
+      for (const d of dirs) { const t = d > 0 ? 1 - insetB - 0.04 : inset + 0.04; this.arrowAt(l, t, d, COLORS.linkActive, baseA * k * 1.2, 4.5); }
+      return;
     }
+    // 流向模式：整条线从发送端颜色渐变到接收端颜色，虚线沿数据方向流动，端点有明确的“出口”与“入口”
+    const a = l.alpha * k * (spotOn ? 1 : this.spot ? 0.5 : 0.78);
+    const grad = ctx.createLinearGradient(p0.sx, p0.sy, p1.sx, p1.sy);
+    grad.addColorStop(0, rgba(l.a.col, a)); grad.addColorStop(1, rgba(l.b.col, a));
+    ctx.lineWidth = 1.9 + (spotOn ? 0.5 : 0);
+    ctx.strokeStyle = grad; ctx.globalAlpha = 0.28; path(); ctx.stroke(); ctx.globalAlpha = 1; // 连续底线，让虚线读成一整条路径
+    const speed = 42 * this.view.zoom, both = l.l.dir === 2;
+    const strokeDash = (dir, phase) => { ctx.setLineDash(both ? [7, 15] : [9, 11]); ctx.lineDashOffset = -dir * this.time * speed + phase; path(); ctx.stroke(); };
+    ctx.strokeStyle = grad;
+    if (both) { strokeDash(1, 0); strokeDash(-1, 11); } else strokeDash(1, 0);
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+    // 端点：接收端实心箭头“进入”节点，发送端一枚空心出口环（双向两端都是箭头）
+    this.arrowAt(l, 1 - insetB, 1, l.b.col, a, 5.5);
+    if (both) this.arrowAt(l, inset, -1, l.a.col, a, 5.5);
+    else { ctx.fillStyle = '#fff'; ctx.strokeStyle = rgba(l.a.col, a); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(p0.sx, p0.sy, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  }
+
+  arrowAt(l, t, dir, rgb, a, sz) {
+    const ctx = this.ctx, p = this.pointAt(l, t), q = this.pointAt(l, t - 0.03 * dir);
+    const an = Math.atan2(p.sy - q.sy, p.sx - q.sx);
+    ctx.fillStyle = rgba(rgb, a);
+    ctx.beginPath(); ctx.moveTo(p.sx + Math.cos(an) * sz * 0.4, p.sy + Math.sin(an) * sz * 0.4);
+    ctx.lineTo(p.sx + Math.cos(an + 2.55) * sz, p.sy + Math.sin(an + 2.55) * sz); ctx.lineTo(p.sx + Math.cos(an - 2.55) * sz, p.sy + Math.sin(an - 2.55) * sz); ctx.closePath(); ctx.fill();
   }
 
   drawPulses(l) {
-    if (!l.pulses.length || l.alpha < 0.05) return;
+    if (this.flowStyle !== 'comet' || !l.pulses.length || l.alpha < 0.05) return;
     const ctx = this.ctx, rgb = COLORS.linkActive, tail = clamp(1.7 / l.len3, 0.08, 0.42);
     const a = l.alpha * (this.spot && !this.spot.links.has(l.id) ? 0.5 : 1);
     for (const p of l.pulses) {
@@ -347,6 +370,9 @@ export class Scene {
     // 外环（核心层常驻，其它层悬停时）
     const halo = n.level === 'core' ? 0.2 : 0; const hk = halo + n.hoverK * 0.35;
     if (hk > 0.01) { ctx.strokeStyle = rgba(col, hk); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(n.top.sx, n.top.sy, r * 1.65, 0, Math.PI * 2); ctx.stroke(); }
+    // 收发提示：发送时从节点泛出一圈，接收时节点周围亮起一层
+    if (n.tx > 0.01) { const p = 1 - n.tx; ctx.strokeStyle = rgba(col, n.tx * 0.55); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.top.sx, n.top.sy, r * (1.1 + 1.6 * easeOutCubic(p)), 0, Math.PI * 2); ctx.stroke(); }
+    if (n.rx > 0.01) { ctx.fillStyle = rgba(col, n.rx * 0.22); ctx.beginPath(); ctx.arc(n.top.sx, n.top.sy, r * (1.35 + 0.5 * n.rx), 0, Math.PI * 2); ctx.fill(); }
     // 本体：白底 + 色环 + 内点
     ctx.fillStyle = '#fff'; ctx.strokeStyle = rgba(col, 1); ctx.lineWidth = n.level === 'core' ? 2.6 : 2.2;
     ctx.beginPath(); ctx.arc(n.top.sx, n.top.sy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();

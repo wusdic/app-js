@@ -6,7 +6,7 @@
 
 - **三层平台**：核心 / 重要 / 一般三层圆形平台上下叠放，业务按部门相邻排在平台的同心环上；平台有厚度与投影，层右缘标注数量与异常数。
 - **业务节点**：白底色环的悬浮圆点（支柱落在平台上），颜色即级别；异常时色环与角标变为告警橙 / 故障红，平台上周期扩散涟漪。核心业务常驻名称，其它层在选中该层、悬停或异常时显示。
-- **连接与数据流转**：弧线常亮表示有连接；有数据往来时蓝色彗星沿弧线飞过，并显示方向箭头（双向两端都有）；故障连接红色慢速呼吸；临时连接为虚线，淡入淡出。
+- **连接与数据流转**：有连接即有一条极淡的底线；正在流转的连接整条点亮，颜色从发送端渐变到接收端，虚线沿数据方向流动（双向连接两股反向交错），接收端有实心箭头“进入”业务，发送端有一枚空心出口环。每一次数据往来，发送端泛出一圈、按线长延时后接收端亮起，看得清谁发、谁收。故障连接红色慢速呼吸；临时连接为虚线，淡入淡出。也可切换为彗星光点模式（`flowStyle: 'comet'` 或 `setFlowStyle('comet')`）。
 - **终端**：每个业务周围有环绕的微粒，数量随在线终端数变化，缓慢巡行、明暗起伏。
 - **交互**：拖动旋转（松手有惯性，空闲 2.5 秒后缓慢自转）；悬停业务显示信息浮层并高亮其关系，其余压暗；点击锁定，镜头轻推近并居中，弹出玻璃质感的详情卡（可用性 / 时延 / 请求量 / 终端、上下游关系）；Esc、再次点击或点空白处解除。
 - **层级切换**：头部分段控件「全部 / 核心 / 重要 / 一般」，非当前层虚化但仍可见，异常业务保持清晰。
@@ -31,7 +31,7 @@ import { createTopologyModule } from './topology/index.js';   // 自带样式（
 import { generateData, startSimulation } from './topology/data.js';
 
 const data = generateData();                        // 或替换为真实数据：{ businesses: [...], links: [...] }
-const mod = createTopologyModule(document.getElementById('topology'), { data, layer: 'all', autoRotate: true, intro: true, onSelect: (b) => {} });
+const mod = createTopologyModule(document.getElementById('topology'), { data, layer: 'all', autoRotate: true, intro: true, flowStyle: 'dash', onSelect: (b) => {} });
 const stop = startSimulation(mod, data);            // 演示用模拟器；接入真实事件时不需要
 ```
 
@@ -58,6 +58,7 @@ link:     { id, from, to, dir: 1 | 2 /* 单向 / 双向 */, status }
 | `setLayer('all' \| 'core' \| 'important' \| 'general')` | 层级切换 |
 | `focus(id)` / `unfocus()` | 锁定 / 解除某业务 |
 | `setAutoRotate(on)` / `resetView()` | 自转开关 / 重置视角 |
+| `setFlowStyle('dash' \| 'comet')` | 流转表现：流向虚线（默认）/ 彗星光点 |
 | `destroy()` | 卸载模块，释放监听与渲染循环 |
 
 ## 结构
