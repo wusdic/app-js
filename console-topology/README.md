@@ -1,16 +1,16 @@
 # 全网业务版图 · 管理前台主视觉模块
 
-管理前台「全局展示」页面中处于视觉中心的一个模块区域，浅色界面、等轴 3D。**与上级目录的深色大屏版本完全独立**：不共享代码、样式、数据与依赖，可单独安装、构建与嵌入。
+管理前台「全局展示」页面中处于视觉中心的一个模块区域，浅色界面。**与上级目录的深色大屏版本完全独立**：不共享代码、样式、数据与依赖，可单独安装、构建与嵌入。
 
 ## 设计
 
-- **业务版图**：全网业务按业务域划分为六块带圆角与厚度的平台（核心支撑 / 经营管理 / 办公协同 / 安全保障 / 民生服务 / 数据与门户），核心支撑域居中靠前。每个域有自己的色相，平台前缘贴有域名与业务数，底边一圈域色描边。
-- **业务 = 立方体**：域内每项业务是一个圆角立方体，高度即业务规模（请求量级），颜色随域；软阴影落在平台与地面上，读出体积与层次。异常时立方体变为告警橙 / 故障红并缓慢呼吸，顶部浮出状态角标，平台上周期扩散涟漪。
-- **数据流转**：默认只显现正在流转的连接——蓝色弧线从一个业务顶部跨到另一个业务顶部，流光头部带尾迹沿弧线飞行；停止流转后弧线淡出。悬停或锁定业务时，其全部连接以灰色显现，其余压暗。故障连接红色慢速呼吸；临时连接淡入淡出。
-- **终端**：每项业务周围有环绕的微粒，数量随在线终端数变化，缓慢巡行。
-- **交互**：拖动旋转（限定角度范围，松手回弹阻尼）、滚轮缩放；空闲时镜头轻微摇摆保持立体感。悬停业务显示信息浮层并高亮其关系；点击业务锁定，镜头推近居中，弹出玻璃质感详情卡（可用性 / 时延 / 请求量 / 终端、上下游关系）；点击平台或头部域芯片聚焦该域，其它域退为灰白，弹出域概览卡（健康度条、流转中 / 跨域数、终端、需关注业务）。Esc、点空白或「重置视角」返回。
-- **开场**：平台自地面升起、业务立方体依次长出、连线通电，约 2.4 秒；系统开启「减少动态效果」时跳过并停用摇摆。
-- **头部与底部**：头部为标题、域芯片（可点击聚焦）、状态图例、「名称」开关（显示全部业务名称）、「重置视角」；底部为流转中连接数、异常数（含故障与涉及域数）、在线终端总数。
+- **斜向立体园区**：等轴测视角。柔和渐变的地面上错落六块**磨砂玻璃**平台（真实的 backdrop-filter 模糊，地面的彩色光斑在玻璃下缓慢流动），每块平台是一个**业务区域**：核心平台区、门户与指挥区、综合办公区、人财物管理区、园区与安防区、公共服务区，各自承载所属的业务。
+- **业务方块**：每个业务是一个带厚度与投影的 3D 方块，顶面印有业务类型图标（网关 / 总线 / 数据库 / 消息 / 门户 / 视频 / 支付 / 人事 / 财务 …），方块高度与图标颜色表示级别（核心最高、钴蓝；重要、天蓝；一般、灰蓝），顶面角落有运行指示灯，前方铭牌显示名称。
+- **路线与数据流**：区域内外的连接是贴在平台上的正交路线（白色路基 + 蓝色中线）；有数据往来时蓝色数据包沿路线飞行，持续流转的路线中线更亮；故障连接红色虚线滚动；临时连接虚线淡入淡出。
+- **异常**：告警 / 故障业务的方块整体变为琥珀 / 红色，顶部浮出脉动角标，平台上扩散涟漪，所属区域的玻璃边缘泛出同色光晕，区域名牌显示异常数。
+- **交互**：鼠标移动带轻微视差；悬停区域时玻璃提亮；悬停业务显示信息浮层并高亮其所有连接与对端，其余压暗；点击锁定，镜头轻推近并弹出玻璃详情卡（可用性 / 时延 / 请求量 / 终端、关联业务及其流转状态）；Esc 或再次点击解除。
+- **开场**：平台自下而上升起、方块弹出、路线通电、数据包出发，约 2 秒；系统开启「减少动态效果」时跳过。
+- **头部与状态**：名称显示开关、只看异常、重置；底部状态片：区域数、业务数、流转中连接数、异常数（含故障数）、在线终端。
 
 ## 运行
 
@@ -21,56 +21,57 @@ npm run dev       # 开发：http://localhost:5173
 npm run build     # 产物在 dist/
 ```
 
-`?nointro` 跳过开场动画。演示页 `index.html` 只提供一个极简的浅色页框与占位区块，模块本身在 `src/map/`。
+`?nointro` 跳过开场动画。演示页 `index.html` 只提供一个极简的浅色页框与占位区块，模块本身在 `src/zonemap/`。
 
 ## 嵌入到管理前台
 
 ```js
-import { createBusinessMap } from './map/index.js';        // 自带样式（类名均以 bm- 前缀）
-import { generateData, startSimulation } from './map/data.js';
+import { createBusinessMap } from './zonemap/index.js';   // 自带样式（类名均以 bm- 前缀）
+import { generateData, startSimulation } from './zonemap/data.js';
 
-const data = generateData();                                // 或替换为真实数据：{ domains, businesses, links }
-const mod = createBusinessMap(document.getElementById('business-map'), { data, intro: true, sway: true, onSelect: (b) => {} });
-const stop = startSimulation(mod, data);                    // 演示用模拟器；接入真实事件时不需要
+const data = generateData();                      // 或替换为真实数据：{ zones, businesses, links }
+const map = createBusinessMap(document.getElementById('business-map'), { data, intro: true, labels: true, onSelect: (b) => {} });
+const stop = startSimulation(map, data);          // 演示用模拟器；接入真实事件时不需要
 ```
 
-容器只需一个空元素，高度默认 `clamp(500px, 60vw, 700px)`，可用 CSS 覆盖 `.bm-module { height: ... }`。
+容器只需一个空元素，模块高度默认 `clamp(480px, 56vw, 660px)`，可用 CSS 覆盖 `.bm { height: ... }`。
 
 数据结构：
 
 ```js
-domain:   { id, name, short, color, desc }
-business: { id, name, domain, scale: 1..5 /* 高度 */, status: 'normal'|'warning'|'critical', dept, owner,
-            metrics: { avail, latency, rps }, terminals, components }
+zone:     { id, name, en, accent: 'cobalt'|'sky'|'mint'|'lilac'|'amber'|'peach', businesses: [id...] }
+business: { id, name, level: 'core'|'important'|'general', kind /* 图标类型，见 icons.js */, zone, status: 'normal'|'warning'|'critical',
+            dept, owner, metrics: { avail, latency, rps }, terminals, components }
 link:     { id, from, to, dir: 1 | 2 /* 单向 / 双向 */, status }
 ```
 
-接口（`mod.*`）：
+区域在地面上的位置由 `ZONE_SLOTS`（3 列 × 2 行）指定，未指定的区域按顺序排列。
+
+接口（`map.*`）：
 
 | 方法 | 说明 |
 | --- | --- |
-| `touch(linkId, dir = 1)` | 该连接有数据往来：放出一道流光（dir = -1 为反向） |
-| `setLinkActive(linkId, on)` | 连接是否处于持续流转状态（弧线显现 + 流光） |
-| `setBusinessStatus(id, status)` | 业务状态变化：颜色平滑过渡、角标、涟漪 |
+| `touch(linkId, dir = 1)` | 该连接有数据往来：放出一个数据包（dir = -1 为反向） |
+| `setLinkActive(linkId, on)` | 连接是否处于持续流转状态（中线提亮） |
+| `setBusinessStatus(id, status)` | 业务状态变化：方块变色、角标 / 涟漪、区域光晕、状态片 |
 | `setLinkStatus(linkId, status)` | 连接状态变化 |
 | `addTransientLink(from, to, ttl = 9, dir = 1)` | 临时连接，ttl 秒后自动消失 |
-| `setTerminals(id, count)` | 更新在线终端数（微粒数量随之变化） |
+| `setTerminals(id, count)` | 更新在线终端数 |
 | `focus(id)` / `unfocus()` | 锁定 / 解除某业务 |
-| `focusDomain(id \| null)` | 聚焦 / 退出某业务域 |
-| `setShowNames(on)` / `setSway(on)` / `resetView()` | 名称开关 / 空闲摇摆 / 重置视角 |
-| `destroy()` | 卸载模块，释放渲染器与监听 |
+| `setLabels(on)` / `setAlertsOnly(on)` | 名称显示 / 只看异常 |
+| `destroy()` | 卸载模块，释放监听与渲染循环 |
 
 ## 结构
 
 ```
 console-topology/
-  index.html           演示页（浅色页框）
-  src/main.js          演示页入口：挂载模块 + 启动模拟器
-  src/page.css         演示页框样式
-  src/map/index.js     模块：DOM 构建、交互、悬浮卡 / 详情卡 / 域概览卡、状态条、对外接口
-  src/map/scene.js     three.js 场景：等轴正交相机、平台 / 立方体 / 弧线流光 / 涟漪 / 终端微粒、软阴影、开场
-  src/map/data.js      业务域与业务模拟数据、实时事件模拟器
-  src/map/style.css    模块样式（bm- 前缀）
+  index.html              演示页（浅色页框）
+  src/main.js             演示页入口：挂载模块 + 启动模拟器
+  src/page.css            演示页框样式
+  src/zonemap/index.js    模块：DOM 与 3D 布局、路线、数据包、交互、浮层、对外接口
+  src/zonemap/scene.css   模块样式：磨砂玻璃平台、3D 方块、铭牌、角标、路线、浮层
+  src/zonemap/data.js     按区域组织的模拟数据与实时事件模拟器
+  src/zonemap/icons.js    业务类型图标
 ```
 
-运行时依赖 three.js（本目录独立安装），构建依赖 Vite。
+实现为 CSS 3D（`transform-style: preserve-3d` + `backdrop-filter`）+ SVG 路线 + 少量 JS，无第三方运行时依赖；开发 / 构建仅依赖 Vite。需要支持 `backdrop-filter`、`color-mix()` 与 `@property` 的现代浏览器（Chrome / Edge 111+、Safari 16.4+、Firefox 128+）。
