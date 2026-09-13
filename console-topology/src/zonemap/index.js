@@ -1,55 +1,46 @@
-// 「全网业务版图」主视觉模块：正向俯视的玻璃园区
-//   一块柔和渐变的地面向后倾斜；业务区域是一排排正向排列的磨砂玻璃平台（数量、大小随数据动态生成与排布），
-//   每块平台承载所属业务的磨砂玻璃方块（名称印在正面）；区域内外用正交路线相连，有数据往来时数据包沿路线飞行；
-//   异常业务玻璃变色、浮出角标与涟漪。整个场景是单一倾斜平面（无多层 3D 深度排序），画面稳定不闪烁。
+// 「全网业务版图」主视觉模块：正向排列的玻璃业务区域 + 3D 玻璃业务体
+//   相机从正前上方俯视（带透视，侧面可见）；区域平台按业务数量动态定尺寸、动态排行；
+//   区域内外用正交路线相连，有数据往来时数据包沿路线飞行；异常业务玻璃内透出琥珀 / 红色光并浮出角标。
+//   实现：CSS 3D + SVG 路线 + 少量 JS。场景内不使用 backdrop-filter、不做逐帧相机运动、所有面互不相交，避免合成闪烁。
 import { LEVEL_NAME, STATUS_NAME } from './data.js';
 import { icon } from './icons.js';
 import './scene.css';
 
-const TILT = 56;                                        // 地面俯角
-const E = Math.tan((TILT * Math.PI) / 180);             // 垂直高度 → 平面内向后偏移的系数
-const SY = 1 / Math.cos((TILT * Math.PI) / 180);        // 平面内纵向拉伸，使平铺文字看起来正对屏幕
-const T = 14;                                           // 平台厚度
-const BW = 84, BD = 40;                                 // 方块宽 / 深
-const CX = 98, CY = 92;                                 // 方块网格步距
-const BH = { core: 28, important: 22, general: 16 };    // 方块高度（级别）
-const TPADX = 24, THEAD = 88, TPADB = 18;               // 平台内边距（含区域名牌区）
-const GAPX = 44, GAPY = 44, MARGIN = 44;                // 平台间距与地面边距
+const CELL = 84, CELL_Y = 128, BLK = 50; // 业务网格（横向 / 纵向间距，纵向留出铭牌不被前排遮挡）与玻璃体底面尺寸
+const ZPAD = 26, GAP = 44, ROWGAP = 84;  // 区域内边距、区域间距、行间距（留出区域名牌）
+const PAD = 30;                          // 地面边距
+const MAXW = 1300;                       // 一行区域的最大总宽（超过则换行）
+const SLAB = 16, LIFT = 2.5;             // 平台厚度；玻璃体离台面的悬空高度（路线与铭牌在这个缝里）
+const BLK_H = { core: 32, important: 26, general: 20 };
+const TILT = 52;                         // 相机俯角
 const fmt = (n) => Number(n).toLocaleString('zh-CN');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h >>> 0; };
 const svgNS = 'http://www.w3.org/2000/svg';
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-const px = (v) => `${Math.round(v * 100) / 100}px`;
 
-// ---------- 动态布局：区域尺寸由业务数决定，行数按舞台宽高比择优 ----------
-function tileSize(n) {
-  const cols = Math.max(1, Math.min(n, Math.min(6, Math.ceil(Math.sqrt(n * 1.7)))));
-  const rows = Math.ceil(n / cols);
-  return { cols, rows, w: 2 * TPADX + cols * CX - (CX - BW), h: THEAD + (rows - 1) * CY + BD + TPADB };
-}
-export function layoutZones(zones, stageAspect = 2) {
-  const tiles = zones.map((z) => ({ z, ...tileSize(z.businesses.length) }));
-  // 核心区域排在中间一行的首位，其余按原顺序
-  let best = null;
-  for (let R = 1; R <= tiles.length; R++) {
-    const per = Math.ceil(tiles.length / R);
-    const rows = []; for (let i = 0; i < tiles.length; i += per) rows.push(tiles.slice(i, i + per));
-    const rowW = rows.map((r) => r.reduce((s, t) => s + t.w, 0) + (r.length - 1) * GAPX);
-    const GW = Math.max(...rowW) + 2 * MARGIN;
-    const GH = rows.reduce((s, r) => s + Math.max(...r.map((t) => t.h)), 0) + (rows.length - 1) * GAPY + MARGIN + 64 + T * E;
-    const k = Math.min(1 / (GW * 1.08), 1 / (stageAspect * GH * 0.7)); // 以舞台宽为单位的缩放：投影高 ≈ GH·cos(俯角)·透视放大
-    if (!best || k > best.k) best = { k, rows, rowW, GW, GH };
-  }
-  const { rows, rowW, GW, GH } = best;
-  let y = 64 + T * E;
-  rows.forEach((r, ri) => {
-    const rh = Math.max(...r.map((t) => t.h));
-    let x = (GW - rowW[ri]) / 2;
-    for (const t of r) { t.x = x; t.y = y + (rh - t.h); x += t.w + GAPX; }
-    y += rh + GAPY;
+// 区域尺寸由业务数决定（偏宽的网格），再按“货架”方式逐行排布，每行居中、前沿对齐
+export function layoutZones(zones) {
+  const items = zones.map((z) => {
+    const n = Math.max(1, z.businesses.length);
+    const cols = n <= 3 ? n : Math.min(5, Math.ceil(n / 2)), rows = Math.ceil(n / cols); // 尽量两行，横向铺开
+    return { z, n, cols, rows, w: 2 * ZPAD + cols * CELL, d: 2 * ZPAD + rows * CELL_Y };
   });
-  return { tiles, GW, GH };
+  const rowsArr = []; let cur = [], curW = 0;
+  for (const it of items) {
+    const add = (cur.length ? GAP : 0) + it.w;
+    if (cur.length && curW + add > MAXW) { rowsArr.push(cur); cur = []; curW = 0; }
+    cur.push(it); curW += (cur.length > 1 ? GAP : 0) + it.w;
+  }
+  if (cur.length) rowsArr.push(cur);
+  const rowW = rowsArr.map((r) => r.reduce((s, it, i) => s + it.w + (i ? GAP : 0), 0));
+  const GW = Math.max(...rowW) + 2 * PAD;
+  let y = PAD + 8;
+  rowsArr.forEach((r, ri) => {
+    let x = (GW - rowW[ri]) / 2; const rowD = Math.max(...r.map((it) => it.d));
+    for (const it of r) { it.x = x; it.y = y + (rowD - it.d); x += it.w + GAP; }
+    y += rowD + ROWGAP;
+  });
+  return { items, GW, GH: y - ROWGAP + PAD };
 }
 
 export function createBusinessMap(container, { data, intro = true, labels = true, onSelect } = {}) {
@@ -66,9 +57,7 @@ export function createBusinessMap(container, { data, intro = true, labels = true
       </div>
     </div>
     <div class="bm-body">
-      <div class="bm-stage"><div class="bm-fit"><div class="bm-world pre">
-        <div class="bm-ground"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i><i class="blob b5"></i><span class="grid"></span></div>
-      </div></div></div>
+      <div class="bm-stage"><div class="bm-fit"><div class="bm-world pre"></div></div></div>
       <div class="bm-stats"></div>
       <div class="bm-hint">悬停查看 · 点击锁定</div>
       <div class="bm-tip" hidden></div>
@@ -77,69 +66,56 @@ export function createBusinessMap(container, { data, intro = true, labels = true
   const $ = (s) => container.querySelector(s);
   const body = $('.bm-body'), stage = $('.bm-stage'), fit = $('.bm-fit'), world = $('.bm-world'), tip = $('.bm-tip'), card = $('.bm-card'), stats = $('.bm-stats');
 
-  // ---------- 布局 ----------
-  const zonesOrdered = data.zones.slice();
-  { const ci = zonesOrdered.findIndex((z) => z.id === 'core' || /核心/.test(z.name)); if (ci > 0) { const [c] = zonesOrdered.splice(ci, 1); zonesOrdered.splice(Math.floor(zonesOrdered.length / 2), 0, c); } }
-  const r0 = stage.getBoundingClientRect();
-  const { tiles, GW, GH } = layoutZones(zonesOrdered, (r0.width || 1200) / (r0.height || 600));
-  world.style.width = px(GW); world.style.height = px(GH);
-  const TE = T * E;
-  const zones = new Map(), blocks = new Map();
-  const blockList = [];
-  tiles.forEach((t, zi) => {
-    const z = t.z;
-    const zone = el('div', 'bm-zone');
-    zone.style.setProperty('--i', zi);
-    zone.innerHTML = `<i class="z-shadow"></i><i class="z-front"></i><div class="z-top"></div><div class="z-head"><b>${esc(z.name)}</b><small>${esc(z.en || '')}</small><span class="z-count">${z.businesses.length} 个业务</span><span class="z-bad"></span></div>`;
-    const sh = zone.querySelector('.z-shadow'), fr = zone.querySelector('.z-front'), top = zone.querySelector('.z-top'), head = zone.querySelector('.z-head');
-    sh.style.cssText = `left:${px(t.x + 6)};top:${px(t.y + 10)};width:${px(t.w)};height:${px(t.h)}`;
-    fr.style.cssText = `left:${px(t.x)};top:${px(t.y + t.h - TE)};width:${px(t.w)};height:${px(TE)}`;
-    top.style.cssText = `left:${px(t.x)};top:${px(t.y - TE)};width:${px(t.w)};height:${px(t.h)}`;
-    head.style.cssText = `left:${px(t.x + TPADX)};top:${px(t.y - TE + 14)}`;
-    zone.dataset.zone = z.id;
-    world.appendChild(zone);
-    const rec = { z, t, el: zone, bad: zone.querySelector('.z-bad') };
-    zones.set(z.id, rec);
-    z.businesses.forEach((bid, i) => {
-      const b = data.businesses.find((q) => q.id === bid); if (!b) return;
-      const bx = t.x + TPADX + (i % t.cols) * CX, by = t.y - TE + THEAD + Math.floor(i / t.cols) * CY, h = BH[b.level] || BH.general;
-      blockList.push({ b, zone: rec, x: bx, y: by, h, cx: bx + BW / 2, cy: by + BD / 2 });
+  // ---------- 场景构建（可重建：setData） ----------
+  let zones = new Map(), blocks = new Map(), routes = new Map(), GW = 0, GH = 0;
+  let svg, gRoads, gLines, gPk;
+  function build() {
+    world.innerHTML = '<div class="bm-ground"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i><span class="grid"></span></div>';
+    zones = new Map(); blocks = new Map(); routes = new Map();
+    const L = layoutZones(data.zones); GW = L.GW; GH = L.GH;
+    world.style.width = `${GW}px`; world.style.height = `${GH}px`;
+    L.items.forEach((it, zi) => {
+      const z = it.z, sideR = it.x + it.w / 2 < GW / 2; // 左半场看到右侧面，右半场看到左侧面
+      const zone = el('div', `bm-zone ${sideR ? 'see-right' : 'see-left'}`);
+      zone.style.left = `${it.x}px`; zone.style.top = `${it.y}px`; zone.style.width = `${it.w}px`; zone.style.height = `${it.d}px`; zone.style.setProperty('--i', zi);
+      zone.style.setProperty('--w', `${it.w}px`); zone.style.setProperty('--d', `${it.d}px`);
+      zone.innerHTML = `<i class="z-shadow"></i><i class="z-front"></i><i class="z-side"></i><div class="z-top"><i class="z-sheen"></i></div>
+        <div class="z-sign"><b>${esc(z.name)}</b><span class="z-count">${z.businesses.length} 个业务</span><span class="z-bad"></span></div>`;
+      zone.dataset.zone = z.id; world.appendChild(zone);
+      const rec = { z, x: it.x, y: it.y, w: it.w, d: it.d, el: zone, bad: zone.querySelector('.z-bad') };
+      zones.set(z.id, rec);
+      const x0 = (it.w - it.cols * CELL) / 2 + (CELL - BLK) / 2, y0 = (it.d - it.rows * CELL_Y) / 2 + (CELL_Y - BLK) / 2 - 10;
+      z.businesses.forEach((bid, i) => {
+        const b = data.businesses.find((q) => q.id === bid); if (!b) return;
+        const bx = x0 + (i % it.cols) * CELL, by = y0 + Math.floor(i / it.cols) * CELL_Y, h = BLK_H[b.level] || BLK_H.general;
+        const cx = it.x + bx + BLK / 2;
+        const blk = el('div', `bm-blk ${b.level} ${b.status} ${cx < GW / 2 ? 'see-right' : 'see-left'}`);
+        blk.style.left = `${bx}px`; blk.style.top = `${by}px`; blk.style.setProperty('--h', `${h}px`); blk.style.setProperty('--i', zi * 10 + i);
+        blk.innerHTML = `<i class="b-shadow"></i><i class="b-ripple"></i><i class="b-front"></i><i class="b-side"></i><div class="b-top">${icon(b.kind)}<i class="led"></i></div>
+          <div class="b-label">${esc(b.name)}</div><div class="b-badge"><i class="ring"></i><span></span></div>`;
+        blk.dataset.id = b.id; zone.appendChild(blk);
+        blocks.set(b.id, { b, el: blk, zone: rec, cx, cy: it.y + by + BLK / 2, h, badge: blk.querySelector('.b-badge span') });
+      });
     });
-  });
-
-  // ---------- 路线（SVG，在平台之上、方块之下） ----------
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('class', 'bm-routes'); svg.setAttribute('viewBox', `0 0 ${GW} ${GH}`); svg.setAttribute('width', GW); svg.setAttribute('height', GH);
-  const gRoads = document.createElementNS(svgNS, 'g'), gLines = document.createElementNS(svgNS, 'g'), gPk = document.createElementNS(svgNS, 'g');
-  svg.append(gRoads, gLines, gPk); world.appendChild(svg);
-
-  // ---------- 方块（按前后深度排序后加入，保证遮挡顺序） ----------
-  blockList.sort((a, b) => a.y - b.y || a.x - b.x);
-  for (const blk of blockList) {
-    const b = blk.b, hE = blk.h * E;
-    const e = el('div', `bm-blk ${b.level} ${b.status}`);
-    e.style.cssText = `left:${px(blk.x)};top:${px(blk.y)};width:${px(BW)};height:${px(BD)};--he:${px(hE)}`;
-    e.style.setProperty('--i', blockList.indexOf(blk));
-    e.innerHTML = `<i class="b-shadow"></i><div class="b-front"><span class="b-name">${esc(b.name)}</span></div><div class="b-top">${icon(b.kind)}<i class="led"></i></div><div class="b-badge"><i class="ring"></i><span></span></div>`;
-    e.dataset.id = b.id;
-    world.appendChild(e);
-    blk.el = e; blk.badge = e.querySelector('.b-badge span');
-    blocks.set(b.id, blk);
+    svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('class', 'bm-routes'); svg.setAttribute('viewBox', `0 0 ${GW} ${GH}`); svg.setAttribute('width', GW); svg.setAttribute('height', GH);
+    gRoads = document.createElementNS(svgNS, 'g'); gLines = document.createElementNS(svgNS, 'g'); gPk = document.createElementNS(svgNS, 'g');
+    svg.append(gRoads, gLines, gPk); world.appendChild(svg);
+    data.links.forEach(addRoute);
+    fitStage();
   }
 
-  const routes = new Map();
-  function routePath(l, a, b) {
-    // 正交路线：竖直出发、水平到达，转角圆滑；同一链路的车道有小幅错位，减少重叠
-    const lane = ((hash(l.id) % 5) - 2) * 6;
+  // ---------- 路线 ----------
+  function routePath(a, b) {
     const dx = b.cx - a.cx, dy = b.cy - a.cy, r = 14;
-    if (Math.abs(dy) < BD * 0.6) return `M${a.cx} ${a.cy + lane * 0.5}L${b.cx} ${b.cy + lane * 0.5}`;
-    if (Math.abs(dx) < BW * 0.6) return `M${a.cx + lane} ${a.cy}L${b.cx + lane} ${b.cy}`;
-    const sx = Math.sign(dx), sy = Math.sign(dy), ax = a.cx + lane, ky = b.cy + lane * 0.5;
-    return `M${ax} ${a.cy}V${ky - sy * r}Q${ax} ${ky} ${ax + sx * r} ${ky}H${b.cx}`;
+    if (Math.abs(dx) < 2 || Math.abs(dy) < 2) return `M${a.cx} ${a.cy}L${b.cx} ${b.cy}`;
+    const sx = Math.sign(dx), sy = Math.sign(dy);
+    if (Math.abs(dx) >= Math.abs(dy)) { const kx = b.cx - sx * r; return `M${a.cx} ${a.cy}H${kx}Q${b.cx} ${a.cy} ${b.cx} ${a.cy + sy * r}V${b.cy}`; }
+    const ky = b.cy - sy * r; return `M${a.cx} ${a.cy}V${ky}Q${a.cx} ${b.cy} ${a.cx + sx * r} ${b.cy}H${b.cx}`;
   }
   function addRoute(l) {
     const a = blocks.get(l.from), b = blocks.get(l.to); if (!a || !b) return null;
-    const d = routePath(l, a, b);
+    const d = routePath(a, b);
     const road = document.createElementNS(svgNS, 'path'); road.setAttribute('d', d); road.setAttribute('class', 'road');
     const line = document.createElementNS(svgNS, 'path'); line.setAttribute('d', d); line.setAttribute('class', `line ${l.transient ? 'transient' : ''} ${l.status}`);
     gRoads.appendChild(road); gLines.appendChild(line);
@@ -147,7 +123,6 @@ export function createBusinessMap(container, { data, intro = true, labels = true
     routes.set(l.id, rec); return rec;
   }
   function removeRoute(id) { const r = routes.get(id); if (!r) return; for (const p of r.packets) p.el.remove(); r.road.remove(); r.line.remove(); routes.delete(id); }
-  data.links.forEach(addRoute);
   const routesOf = (id) => [...routes.values()].filter((r) => r.a.b.id === id || r.b.b.id === id);
 
   // ---------- 数据包 ----------
@@ -168,20 +143,22 @@ export function createBusinessMap(container, { data, intro = true, labels = true
         if (p.t > 1 || p.t < 0) { p.el.remove(); r.packets.splice(i, 1); continue; }
         const L = p.t * r.len, q = r.line.getPointAtLength(L), q2 = r.line.getPointAtLength(Math.min(r.len, Math.max(0, L + p.dir * 4)));
         const ang = Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / Math.PI;
-        const edge = Math.min(p.t, 1 - p.t); // 两端淡入淡出，不在方块处突然出现
-        p.el.setAttribute('opacity', Math.min(1, edge / 0.1).toFixed(2));
+        const edge = Math.min(1, Math.min(p.t, 1 - p.t) / 0.08); // 两端渐显渐隐，不突然出现
         p.el.setAttribute('transform', `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+        p.el.setAttribute('opacity', edge.toFixed(2));
       }
     }
   }
 
   // ---------- 尺寸自适应 ----------
   function fitStage() {
-    const r = stage.getBoundingClientRect(); if (!r.width) return;
-    const k = Math.min((r.width - 32) / (GW * 1.08), (r.height - 28) / (GH * 0.7));
+    const r = stage.getBoundingClientRect(); if (!r.width || !GW) return;
+    const cs = Math.cos(TILT * Math.PI / 180);
+    const projW = GW * 1.06, projH = GH * cs * 1.24 + 60; // 前排因透视更大，多留一点下边距
+    const k = Math.min((r.width - 28) / projW, (r.height - 40) / projH);
     fit.style.setProperty('--k', k.toFixed(4));
   }
-  const ro = new ResizeObserver(fitStage); ro.observe(stage); fitStage();
+  const ro = new ResizeObserver(fitStage); ro.observe(stage);
 
   // ---------- 交互 ----------
   let hover = null, pinned = null, alertsOnly = false;
@@ -195,15 +172,15 @@ export function createBusinessMap(container, { data, intro = true, labels = true
       blk.el.classList.toggle('rel', !!spot && spot.nodes.has(bid) && bid !== id);
     }
     for (const r of routes.values()) {
-      const on = spot && spot.routes.has(r.l.id);
+      const on = !!(spot && spot.routes.has(r.l.id));
       const dim = (spot && !on) || (alertsOnly && !on && r.l.status === 'normal');
-      r.line.classList.toggle('hl', !!on); r.road.classList.toggle('hl', !!on); r.line.classList.toggle('dim', dim); r.road.classList.toggle('dim', dim);
+      r.line.classList.toggle('hl', on); r.road.classList.toggle('hl', on); r.line.classList.toggle('dim', dim); r.road.classList.toggle('dim', dim);
     }
     for (const z of zones.values()) z.el.classList.toggle('dim', !!spot && ![...spot.nodes].some((n) => blocks.get(n)?.zone === z));
   }
   world.addEventListener('pointerover', (e) => {
-    const blk = e.target.closest('.bm-blk'); const zoneEl = e.target.closest('.bm-zone');
-    for (const z of zones.values()) z.el.classList.toggle('hover', z.el === zoneEl || (blk && blocks.get(blk.dataset.id)?.zone === z));
+    const blk = e.target.closest('.bm-blk'), zone = e.target.closest('.bm-zone');
+    for (const z of zones.values()) z.el.classList.toggle('hover', z.el === zone);
     const id = blk ? blk.dataset.id : null; if (id === hover) return;
     hover = id; applySpot();
     if (id && id !== pinned) { tip.innerHTML = tipHtml(blocks.get(id)); tip.hidden = false; place(tip, id, 12); } else tip.hidden = true;
@@ -215,7 +192,7 @@ export function createBusinessMap(container, { data, intro = true, labels = true
     pinned = id; tip.hidden = true; applySpot();
     card.hidden = !id;
     if (id) { card.innerHTML = cardHtml(blocks.get(id)); card.querySelector('.bm-card-close').addEventListener('click', () => pin(null)); place(card, id, 16); }
-    if (id) { const p = screenOf(id), r = stage.getBoundingClientRect(); fit.style.setProperty('--zx', px((r.width / 2 - p.x) * 0.5)); fit.style.setProperty('--zy', px((r.height / 2 - p.y) * 0.5)); fit.style.setProperty('--z', '1.1'); }
+    if (id) { const p = screenOf(id), r = stage.getBoundingClientRect(); fit.style.setProperty('--zx', `${(r.width / 2 - p.x) * 0.5}px`); fit.style.setProperty('--zy', `${(r.height / 2 - p.y) * 0.5}px`); fit.style.setProperty('--z', '1.1'); }
     else { fit.style.setProperty('--zx', '0px'); fit.style.setProperty('--zy', '0px'); fit.style.setProperty('--z', '1'); }
     onSelect?.(id ? blocks.get(id).b : null);
   }
@@ -247,19 +224,30 @@ export function createBusinessMap(container, { data, intro = true, labels = true
   labelsBtn.addEventListener('click', () => setLabels(!labelsBtn.classList.contains('on')));
   alertsBtn.addEventListener('click', () => { alertsOnly = !alertsOnly; alertsBtn.classList.toggle('on', alertsOnly); alertsBtn.setAttribute('aria-pressed', String(alertsOnly)); applySpot(); });
   $('[data-act="reset"]').addEventListener('click', () => { pin(null); if (alertsOnly) alertsBtn.click(); setLabels(true); });
-  setLabels(labels);
 
   // ---------- 状态条与区域异常数 ----------
   function refreshStats() {
     const flows = [...routes.values()].filter((r) => r.active).length;
     const warn = data.businesses.filter((b) => b.status === 'warning').length, crit = data.businesses.filter((b) => b.status === 'critical').length;
-    const terms = data.businesses.reduce((s, b) => s + b.terminals, 0);
+    const terms = data.businesses.reduce((s, b) => s + (b.terminals || 0), 0);
     stats.innerHTML = `<span class="bm-stat"><b>${data.zones.length}</b>业务区域</span><span class="bm-stat"><b>${data.businesses.length}</b>业务</span><span class="bm-stat"><b>${flows}</b>条流转中</span>
       <span class="bm-stat ${crit ? 'crit' : warn ? 'warn' : ''}"><b>${warn + crit}</b>${crit ? `异常 · ${crit} 故障` : '异常'}</span><span class="bm-stat"><b>${fmt(terms)}</b>在线终端</span>`;
-    for (const z of zones.values()) { const bad = z.z.businesses.filter((id) => blocks.get(id)?.b.status !== 'normal').length; z.bad.textContent = bad ? `${bad} 个异常` : ''; z.el.classList.toggle('has-bad', bad > 0); z.el.classList.toggle('has-crit', z.z.businesses.some((id) => blocks.get(id)?.b.status === 'critical')); }
+    for (const z of zones.values()) { const list = z.z.businesses.map((id) => blocks.get(id)).filter(Boolean); const bad = list.filter((k) => k.b.status !== 'normal').length; z.bad.textContent = bad ? `${bad} 个异常` : ''; z.el.classList.toggle('has-bad', bad > 0); z.el.classList.toggle('has-crit', list.some((k) => k.b.status === 'critical')); }
   }
 
-  // ---------- 渲染循环（只推进数据包与浮层位置） ----------
+  // ---------- 开场 ----------
+  function playIntro() {
+    if (!intro || reduced) { world.classList.remove('pre'); flowsOn = true; return; }
+    flowsOn = false;
+    for (const r of routes.values()) { r.line.style.strokeDasharray = `${r.len}`; r.line.style.strokeDashoffset = `${r.len}`; r.road.style.opacity = '0'; }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      world.classList.remove('pre');
+      for (const r of routes.values()) { r.line.style.transition = 'stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1) .9s'; r.line.style.strokeDashoffset = '0'; r.road.style.transition = 'opacity .8s ease 1.2s'; r.road.style.opacity = ''; }
+    }));
+    setTimeout(() => { for (const r of routes.values()) { r.line.style.transition = ''; r.line.style.strokeDasharray = ''; r.line.style.strokeDashoffset = ''; r.road.style.transition = ''; } flowsOn = true; }, 2200);
+  }
+
+  // ---------- 渲染循环（只推进数据包与浮层位置，相机静止） ----------
   let raf = 0, last = performance.now(), statT = 0, alive = true;
   const frame = (now) => {
     if (!alive) return;
@@ -272,21 +260,16 @@ export function createBusinessMap(container, { data, intro = true, labels = true
   };
   const onVis = () => { if (document.hidden) cancelAnimationFrame(raf); else { last = performance.now(); raf = requestAnimationFrame(frame); } };
   document.addEventListener('visibilitychange', onVis);
-  refreshStats();
+
+  build(); setLabels(labels); refreshStats(); playIntro();
   raf = requestAnimationFrame(frame);
-  // 开场：平台升起 → 方块浮现 → 路线通电 → 数据包出发
-  if (intro && !reduced) {
-    for (const r of routes.values()) { r.line.style.strokeDasharray = `${r.len}`; r.line.style.strokeDashoffset = `${r.len}`; r.road.style.opacity = '0'; }
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      world.classList.remove('pre');
-      for (const r of routes.values()) { r.line.style.transition = 'stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1) .9s'; r.line.style.strokeDashoffset = '0'; r.road.style.transition = 'opacity .8s ease 1.2s'; r.road.style.opacity = ''; }
-    }));
-    setTimeout(() => { for (const r of routes.values()) { r.line.style.transition = ''; r.line.style.strokeDasharray = ''; r.line.style.strokeDashoffset = ''; r.road.style.transition = ''; } flowsOn = true; world.classList.add('ready'); }, 2100);
-  } else { world.classList.remove('pre'); world.classList.add('ready'); }
 
   // ---------- 对外接口 ----------
   const api = {
-    data, zones, blocks, routes,
+    get data() { return data; }, get zones() { return zones; }, get blocks() { return blocks; }, get routes() { return routes; },
+    layout: () => ({ GW, GH }),
+    // 整体重载：区域 / 业务 / 连接数量变化时重新布局（区域尺寸与排行随之变化）
+    setData: (next) => { data = next; pinned = null; hover = null; card.hidden = true; tip.hidden = true; world.classList.add('pre'); build(); refreshStats(); playIntro(); },
     touch: (linkId, dir = 1) => { const r = routes.get(linkId); if (r) spawnPacket(r, dir); },
     setLinkActive: (linkId, on) => { const r = routes.get(linkId); if (!r) return; r.active = on; r.line.classList.toggle('on', on); r.road.classList.toggle('on', on); },
     setBusinessStatus: (id, status) => { const blk = blocks.get(id); if (!blk) return; blk.el.classList.remove(blk.b.status); blk.b.status = status; blk.el.classList.add(status); blk.badge.textContent = status === 'critical' ? '故障' : status === 'warning' ? '告警' : ''; if (pinned === id) { card.innerHTML = cardHtml(blk); card.querySelector('.bm-card-close').addEventListener('click', () => pin(null)); } refreshStats(); applySpot(); },

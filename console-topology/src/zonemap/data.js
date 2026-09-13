@@ -29,11 +29,12 @@ const OWNERS = ['王工', '李工', '张工', '刘工', '陈工', '赵工', '孙
 export const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-export function generateData() {
+// 区域数与每区业务数可按实际情况给定（演示：?zones=4&max=5）；布局由模块按数据动态计算
+export function generateData({ zones: zoneCount = ZONES.length, maxPerZone = Infinity } = {}) {
   const zones = [], businesses = [];
-  ZONES.forEach((z, zi) => {
-    const zone = { id: z.id, name: z.name, en: z.en, accent: z.accent, businesses: [] };
-    z.biz.forEach(([name, level, kind], i) => {
+  ZONES.slice(0, Math.max(1, zoneCount)).forEach((z, zi) => {
+    const zone = { id: z.id, name: z.name, en: z.en, businesses: [] };
+    z.biz.slice(0, Math.max(1, maxPerZone)).forEach(([name, level, kind], i) => {
       const b = { id: `${z.id}-${i + 1}`, name, level, kind, zone: z.id, status: 'normal', dept: DEPTS[(zi + i) % DEPTS.length], owner: OWNERS[(zi * 3 + i) % OWNERS.length],
         metrics: { avail: +(99.5 + Math.random() * 0.49).toFixed(2), latency: Math.round(level === 'core' ? rand(40, 120) : rand(80, 320)), rps: Math.round(level === 'core' ? rand(1500, 9000) : level === 'important' ? rand(200, 1500) : rand(20, 300)) },
         terminals: Math.round(level === 'core' ? rand(600, 2400) : level === 'important' ? rand(150, 700) : rand(20, 160)), components: Math.round(level === 'core' ? rand(5, 9) : rand(3, 6)) };
@@ -41,9 +42,9 @@ export function generateData() {
     });
     zones.push(zone);
   });
-  const byName = (n) => businesses.find((b) => b.name === n).id;
+  const byName = (n) => businesses.find((b) => b.name === n)?.id;
   const links = []; const seen = new Set(); let n = 0;
-  const add = (a, b, dir = 1) => { if (a === b) return; const k = a < b ? `${a}|${b}` : `${b}|${a}`; if (seen.has(k)) return; seen.add(k); links.push({ id: `l${++n}`, from: a, to: b, dir, status: 'normal', duty: { on: rand(6, 16), off: rand(4, 12) } }); };
+  const add = (a, b, dir = 1) => { if (!a || !b || a === b) return; const k = a < b ? `${a}|${b}` : `${b}|${a}`; if (seen.has(k)) return; seen.add(k); links.push({ id: `l${++n}`, from: a, to: b, dir, status: 'normal', duty: { on: rand(6, 16), off: rand(4, 12) } }); };
   const auth = byName('统一身份认证'), bus = byName('核心交换总线'), mdm = byName('主数据中心'), msg = byName('统一消息平台'), dbc = byName('核心数据库集群'), dns = byName('目录与域名服务');
   // 核心平台内部：总线星型 + 认证 / 目录 / 数据库
   for (const x of [auth, mdm, msg, dbc, dns]) add(bus, x, 2);
