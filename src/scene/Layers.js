@@ -33,11 +33,12 @@ const discShader = {
       float rim = lineAt((1.0 - r) * uRadius, wRim) * 0.62 + lineAt((1.0 - r) * uRadius, max(2.5, px * 10.0)) * 0.08; // 外缘：清晰细线 + 极淡内晕，不进辉光
       float fill = 0.13 * (1.0 - r * 0.7);
       float sweep = pow(fract(ang / 6.2831853 - uTime * 0.0167), 12.0) * 0.26 * smoothstep(0.1, 0.5, r) * uScan;
-      // 每 9 秒一圈从中心扩散的能量环
-      float pr = fract(uTime / 9.0);
-      float pulse = lineAt(abs(r - pr) * uRadius, max(0.6, px * 3.0)) * 0.38 * (1.0 - pr) * uScan;
-      float detail = (rings + spokes + sweep + pulse) * (1.0 - uGhost);
-      float a = (fill * mix(1.0, 0.55, uGhost) + detail + rim * mix(1.0, 0.6, uGhost)) * uDim;
+      // 每 14 秒一圈从中心扩散的能量环（淡入出现，不突跳）
+      float pr = fract(uTime / 14.0);
+      float pulse = lineAt(abs(r - pr) * uRadius, max(0.6, px * 3.0)) * 0.3 * (1.0 - pr) * smoothstep(0.0, 0.12, pr) * uScan;
+      // 虚化层：网格保留三成、扫描与能量环停掉、底与外缘略淡
+      float detail = (rings + spokes) * (1.0 - uGhost * 0.7) + (sweep + pulse) * (1.0 - uGhost);
+      float a = (fill * mix(1.0, 0.7, uGhost) + detail + rim * mix(1.0, 0.75, uGhost)) * uDim;
       // 开场：从中心向外画出，带一圈亮边
       float mask = mix(1.0 - smoothstep(uReveal - 0.12, uReveal, r), 1.0, step(0.999, uReveal)); // 画完后不再遮罩，外缘亮边完整保留
       float front = lineAt(abs(r - uReveal) * uRadius, 0.9) * 0.9 * step(0.001, uReveal) * step(uReveal, 0.999);

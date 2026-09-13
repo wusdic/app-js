@@ -107,7 +107,7 @@ export function createSystemModel(level, colorHex, r = 1, phase = 0) {
       orb.rotation.y = t * 0.15 + phase;
       orbMat.uniforms.uTime.value = t + phase;
       for (const o of orbits) { o.holder.rotation.y += dt * o.speed; o.ang += dt * o.angSpeed; o.spark.position.set(Math.cos(o.ang) * o.R, 0, Math.sin(o.ang) * o.R); }
-      const beat = status === 'critical' ? 0.6 + 0.4 * heartbeat(t, ALARM.critical) : status === 'warning' ? 0.75 + 0.25 * heartbeat(t, ALARM.warning) : 1;
+      const beat = status === 'critical' ? 0.7 + 0.3 * heartbeat(t, ALARM.critical) : status === 'warning' ? 0.8 + 0.2 * heartbeat(t, ALARM.warning) : 1;
       for (const m of mats) {
         const v = m.userData.base * vis * (m === baseRing.material || m === orbitMat || m === haloMat ? beat : 1) * (m === glow.material || m === haloMat ? 1 + hover * 0.5 : 1);
         if (m === orbMat) m.uniforms.uOpacity.value = v; else m.opacity = v;

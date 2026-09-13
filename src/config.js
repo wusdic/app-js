@@ -24,7 +24,7 @@ export const LAYOUT = {
   nodeRadius: { core: 1.6, important: 1.2, general: 0.95 },
   camera: { position: [0, 57, 94], target: [0, 0, 0] }, // 全景视角（默认）
   defaultLayer: 'core', // 页面打开时默认的重点层级：core | important | general | all（其它层虚化）
-  ghost: { node: 0.45, abnormalNode: 0.8, disc: 0.6 }, // 虚化层的可见度
+  ghost: { node: 0.64, abnormalNode: 0.88, disc: 0.78 }, // 虚化层的可见度（节点按 gamma 映射后再压暗，0.64 ≈ 37% 线性透明度）
   intro: { enabled: true, camDistance: 1.45, camLift: 0.12 }, // 开场：逐步生成 + 轻微推进
   focus: { offset: [0, 30, 50], fov: 36 },
 };
@@ -39,12 +39,18 @@ export const LINK_RULES = {
   arrowInset: 0.9, // 方向箭头距端点的距离（世界单位）
   radius: 0.13, // 管线半径
   // 底线亮度：intra = 两端都在当前层；cross = 一端在当前层；other = 与当前层无关；all = 查看全部；spot = 聚光中的连线
-  base: { intra: 0.36, cross: 0.12, other: 0.04, all: 0.075, spot: 0.42 },
+  base: { intra: 0.36, cross: 0.15, other: 0.07, all: 0.075, spot: 0.42 },
 };
 
-// 告警节律：全站只有一种慢速“心跳”（快起慢落），不做 1Hz 以上的频闪
-export const ALARM = { critical: 3.0, warning: 4.5 };
-export const heartbeat = (t, period) => { const f = (t % period) / period; return (1 - f) * (1 - f); };
+// 告警节律：全站只有一种慢速“呼吸”（短起慢落，不突跳），不做 1Hz 以上的频闪；pulse=false 时所有警示元素保持恒定亮度
+export const ALARM = { critical: 4.5, warning: 7.0, attack: 0.14, pulse: true };
+export const heartbeat = (t, period) => {
+  if (!ALARM.pulse) return 0.4;
+  const f = (t % period) / period;
+  if (f < ALARM.attack) { const a = f / ALARM.attack; return a * a * (3 - 2 * a); }
+  const d = 1 - (f - ALARM.attack) / (1 - ALARM.attack);
+  return d * d;
+};
 
 // 健康度评分：100 − 各层异常的加权扣分（链路告警按两端较高层级取半权）
 export const HEALTH_WEIGHTS = { core: { critical: 30, warning: 10 }, important: { critical: 10, warning: 4 }, general: { critical: 4, warning: 1 } };

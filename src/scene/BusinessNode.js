@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { createSystemModel } from './SystemModel.js';
-import { LAYOUT, ALARM, THEME, colorOf, hashPhase } from '../config.js';
+import { LAYOUT, ALARM, THEME, colorOf, hashPhase, heartbeat } from '../config.js';
 import { tween, Ease } from '../core/Tween.js';
 
 const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
@@ -84,9 +84,11 @@ export class BusinessNode {
     this.model.update(dt, t, vis, st, this.hover);
     if (this.alertRing.visible) {
       const period = st === 'critical' ? ALARM.critical : ALARM.warning;
-      const p = ((t + this.phase) % period) / period;
-      this.alertRing.scale.setScalar(this.radius * (1.4 + p * 1.8));
-      this.alertMat.opacity = (1 - p) * (1 - p) * 0.6 * vis;
+      if (ALARM.pulse) {
+        const p = ((t + this.phase) % period) / period;
+        this.alertRing.scale.setScalar(this.radius * (1.4 + p * 1.8));
+        this.alertMat.opacity = heartbeat(t + this.phase, period) * 0.45 * vis;
+      } else { this.alertRing.scale.setScalar(this.radius * 1.9); this.alertMat.opacity = 0.22 * vis; } // 关闭脉动：恒定细环标记
     }
   }
 

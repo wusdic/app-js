@@ -116,7 +116,8 @@ export class FlowTube {
         s.visible = true;
         this.curve.getPointAt(h.t, s.position);
         const shrink = this.edgeFade ? 1 - (Math.max(0, h.t - 0.7) / 0.3) * 0.9 : 1;
-        s.scale.setScalar(this.spriteScale * shrink * (0.6 + 0.4 * this.glow));
+        const ramp = Math.min(1, (h.dir > 0 ? h.t : 1 - h.t) / 0.06); // 头部从节点处渐显，不在节点上突然爆亮
+        s.scale.setScalar(this.spriteScale * shrink * (0.6 + 0.4 * this.glow) * (0.3 + 0.7 * ramp));
       } else if (s) s.visible = false;
     }
     this.spriteMat.opacity = 0.95 * this.dim * this.glow;

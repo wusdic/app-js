@@ -404,7 +404,7 @@ export class FocusStage {
       c.holder.scale.setScalar(Math.max(0.001, (0.6 + 0.4 * k) * (isSel ? 1.12 : 1)));
       c.holder.position.copy(c.pos).multiplyScalar(0.8 + 0.2 * k);
       const st = c.data.status;
-      const beat = st === 'critical' ? 0.6 + 0.4 * heartbeat(time, ALARM.critical) : st === 'warning' ? 0.75 + 0.25 * heartbeat(time, ALARM.warning) : 1;
+      const beat = st === 'critical' ? 0.7 + 0.3 * heartbeat(time, ALARM.critical) : st === 'warning' ? 0.8 + 0.2 * heartbeat(time, ALARM.warning) : 1;
       const back = sel && !isSel ? 0.6 : 1;
       c.mats.fill.opacity = 0.9 * k * back; c.mats.edge.opacity = 0.9 * k * beat * back; c.mats.top.opacity = k * back; c.mats.halo.opacity = 0.5 * k * beat * back;
       c.mats.ring.opacity += ((isSel ? 0.9 : 0) - c.mats.ring.opacity) * Math.min(1, dt * 6);

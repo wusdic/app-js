@@ -10,7 +10,7 @@ import { FocusStage } from './scene/FocusStage.js';
 import { Tooltip } from './ui/Tooltip.js';
 import { initPanels } from './ui/Panels.js';
 import { generateData, startSimulation, deriveMetrics } from './data/mock.js';
-import { LAYOUT, LEVEL_NAME, LEVELS, LINK_RULES, HEALTH_WEIGHTS } from './config.js';
+import { LAYOUT, LEVEL_NAME, LEVELS, LINK_RULES, HEALTH_WEIGHTS, ALARM } from './config.js';
 
 // ---------- 场景基础 ----------
 const app = new App(document.getElementById('gl'), document.getElementById('labels'));
@@ -262,6 +262,7 @@ const panels = initPanels({
     if (key === 'terminals') terminals.setEnabled(on);
     if (key === 'bloom') app.setBloom(on);
     if (key === 'patrol') { state.patrol.enabled = on; if (!on) stopPatrol(); }
+    if (key === 'alarm') ALARM.pulse = on;
   },
   onQuality: (q) => { if (q === 'auto') { app.autoQuality = true; app.setQuality('high', { auto: true }); panels.setQuality(app.quality, true); } else app.setQuality(q); },
   onAlertClick: (alertId) => { const a = state.alerts.get(alertId); if (!a || a.recoveredAt) return; if (a.kind === 'link') focus(a.focusId, null, a.targetId); else focus(a.targetId, a.cid || null); },
@@ -577,6 +578,8 @@ const api = {
   spotlight: (kind, id) => { if (!id) return clearPin(); state.pinned = { kind, id }; setSpot(pinnedSpot()); updateSpotChip(); },
   search,
   setQuality: (q) => (q === 'auto' ? (app.autoQuality = true) : app.setQuality(q)),
+  // 警示脉动（故障 / 告警的呼吸式明暗）开关；关闭后警示元素恒定亮度
+  setAlarmPulse: (on) => { ALARM.pulse = !!on; panels.setToggle('alarm', !!on); },
   // 批量事件：[{ type: 'touch'|'business'|'component'|'link'|'metrics'|'terminals', ... }]
   applyEvents(list) { for (const e of list) { if (e.type === 'touch') links.touch(e.id, e); else if (e.type === 'business') api.setBusinessStatus(e.id, e.status, e.message); else if (e.type === 'component') api.setComponentStatus(e.bid, e.cid, e.status, e.message); else if (e.type === 'link') api.setLinkStatus(e.id, e.status, e.message); else if (e.type === 'metrics') api.setMetrics(e.id, e.metrics); else if (e.type === 'terminals') { const b = nodes.get(e.id)?.data; if (b) Object.assign(b.terminals, e.terminals); api.setTerminals(); } } },
   // 整体重载：{ businesses, links }
