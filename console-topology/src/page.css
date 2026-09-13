@@ -1,0 +1,16 @@
+/* 演示页框：只提供浅色页面环境与占位区块，模块本身的样式在 topology/style.css */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body { margin: 0; background: #f5f7fb; color: #15213b; font-family: Manrope, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+.topbar { height: 52px; display: flex; align-items: center; gap: 28px; padding-inline: 24px; background: #fff; border-bottom: 1px solid #e3e9f4; }
+.brand { font-weight: 800; letter-spacing: 0.02em; display: flex; align-items: center; gap: 9px; }
+.brand i { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #2457f5, #6ea1ff); }
+.nav { display: flex; gap: 22px; font-size: 13px; color: #6a7890; }
+.nav b { color: #15213b; font-weight: 600; position: relative; }
+.nav b::after { content: ''; position: absolute; left: 0; right: 0; bottom: -17px; height: 2px; background: #2457f5; border-radius: 2px; }
+.page { max-width: 1280px; margin: 0 auto; padding: 22px 24px 40px; }
+.crumb { font-size: 12px; color: #6a7890; margin-bottom: 14px; }
+.crumb b { color: #15213b; font-weight: 600; }
+.placeholders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+.ph { height: 150px; border: 1.5px dashed #d3dcec; border-radius: 12px; display: grid; place-items: center; font-size: 12px; color: #9aa7bd; letter-spacing: 0.06em; background: rgba(255,255,255,0.4); }
+@media (max-width: 720px) { .placeholders { grid-template-columns: 1fr; } .nav { display: none; } .page { padding-inline: 16px; } }
