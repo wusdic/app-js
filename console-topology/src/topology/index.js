@@ -7,7 +7,7 @@ const fmt = (n) => Number(n).toLocaleString('zh-CN');
 const svgRotate = '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6"/><path d="M16.5 3.5v4h-4"/></svg>';
 const svgHome = '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 10 4l6 5.5"/><path d="M5.5 8.5V16h9V8.5"/></svg>';
 
-export function createTopologyModule(container, { data, layer = 'all', autoRotate = true, intro = true, flowStyle = 'dash', onSelect } = {}) {
+export function createTopologyModule(container, { data, layer = 'all', autoRotate = true, intro = true, flowStyle = 'wave', onSelect } = {}) {
   container.classList.add('ct-module');
   container.innerHTML = `
     <div class="ct-head">
@@ -150,11 +150,11 @@ export function createTopologyModule(container, { data, layer = 'all', autoRotat
   const api = {
     scene, data,
     setLayer, setAutoRotate,
-    setFlowStyle: (style) => { scene.flowStyle = style === 'comet' ? 'comet' : 'dash'; },
+    setFlowStyle: (style) => { scene.flowStyle = style === 'dash' ? 'dash' : 'wave'; },
     focus: (id) => pin(scene.nodeById.has(id) ? id : null),
     unfocus: () => pin(null),
     resetView: () => { pin(null); scene.resetView(); },
-    touch: (linkId, dir = 1) => scene.pulse(linkId, dir),
+    touch: (linkId, dir = 1) => scene.touch(linkId, dir),
     setLinkActive: (linkId, on) => scene.setActive(linkId, on),
     setBusinessStatus: (id, status) => { const n = scene.nodeById.get(id); if (!n) return; n.b.status = status; scene.retarget(n); if (scene.pinned === id) card.innerHTML = cardHtml(n), card.querySelector('.ct-card-close')?.addEventListener('click', () => pin(null)); refreshStats(); },
     setLinkStatus: (linkId, status) => { const l = scene.linkById.get(linkId); if (l) l.l.status = status; },

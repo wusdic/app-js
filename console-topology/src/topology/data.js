@@ -38,7 +38,7 @@ export function generateData() {
 // 实时模拟：连接按占空比通断、放出数据流；随机业务异常与恢复；临时连接；终端波动
 export function startSimulation(api, data) {
   const links = data.links, biz = data.businesses;
-  const state = new Map(links.map((l) => [l.id, { on: Math.random() < 0.25, until: rand(1, 12), next: rand(0.2, 1.5) }]));
+  const state = new Map(links.map((l) => [l.id, { on: Math.random() < 0.3, until: rand(1, 12), next: rand(0.3, 4) }]));
   for (const [id, s] of state) api.setLinkActive(id, s.on);
   const incidents = new Map(); // bizId → until
   let t = 0, last = performance.now(), nextIncident = 6, nextTransient = 9, nextDrift = 2;
@@ -47,7 +47,7 @@ export function startSimulation(api, data) {
     for (const l of links) {
       const s = state.get(l.id); s.until -= dt;
       if (s.until <= 0) { s.on = !s.on; s.until = s.on ? l.duty.on : l.duty.off; if (l.status === 'critical') s.on = false; api.setLinkActive(l.id, s.on); }
-      if (s.on) { s.next -= dt; if (s.next <= 0) { api.touch(l.id, l.dir === 2 ? (Math.random() < 0.5 ? 1 : -1) : 1); s.next = rand(1.2, 2.6); } }
+      if (s.on) { s.next -= dt; if (s.next <= 0) { api.touch(l.id, l.dir === 2 ? (Math.random() < 0.5 ? 1 : -1) : 1); s.next = rand(3.5, 8); } }
     }
     for (const [id, until] of incidents) if (t > until) { incidents.delete(id); api.setBusinessStatus(id, 'normal'); const l = links.find((x) => x.status !== 'normal' && (x.from === id || x.to === id)); if (l) api.setLinkStatus(l.id, 'normal'); }
     if (t > nextIncident) {
